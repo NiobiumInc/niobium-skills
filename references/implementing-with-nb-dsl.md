@@ -29,7 +29,7 @@ to transcribe the design:
 | What crosses the wire (1, 8) | `wire` type declarations — the compiler generates all serialization; a stage's `reads(...)`/`writes(...)` clauses are a machine-checked message-flow spec |
 | Who encrypts / packing legality (1, 5) | Expressed in *which stage does the encrypting*. Single encryptor → one `@client` stage packs records across slots. Independent encryptors → each owner's data is its own ciphertext; never pack across owners (the DSL does not yet check this — enforce it by design review) |
 | Scheme selection (4) | `scheme CKKS { ... }` block. **The DSL is CKKS-only today** — a BFV/BGV design must use Track B |
-| Depth budget (5, 6) | `depth:` in the scheme block; per-instance via `scheme.override(depth: inst.depth)`. The compiler warns when the statically tracked circuit depth exceeds the budget, and when the budget is heavily over-provisioned (ciphertext size waste) |
+| Depth budget (5, 6) | `depth:` in the scheme block; per-instance via `scheme.override(depth: inst.depth)`. The compiler **errors** when the statically tracked multiplication chain exceeds the budget (a sound lower bound), and warns when the budget is heavily over-provisioned — the warning stays silent when depth is statically opaque (loops over encrypted ops, `chebyshev`, `*_norelin`, combinators, `extern_call`) |
 | Ring dimension / slots (6) | `ring_dim` field on the `Instance` struct (applied automatically); `n_slots = ring_dim / 2` for CKKS |
 | Security level (6) | `security:` in the scheme block; `scheme.override(security: not_set)` for toy/dev profiles |
 | Scaling / first modulus (6) | `precision:` (scaling mod size) and `first_mod:` in the scheme block |
