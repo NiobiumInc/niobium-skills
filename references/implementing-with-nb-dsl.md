@@ -27,7 +27,7 @@ to transcribe the design:
 |---|---|
 | Parties and trust boundaries (1) | `@client` / `@server` function annotations — compiled to separate binaries; server code referencing `SecretKey` or calling `decrypt()` is a **compile error** |
 | What crosses the wire (1, 8) | `wire` type declarations — the compiler generates all serialization; a stage's `reads(...)`/`writes(...)` clauses are a machine-checked message-flow spec |
-| Who encrypts / packing legality (1, 5) | Expressed in *which stage does the encrypting*. Single encryptor → one `@client` stage packs records across slots. Independent encryptors → each owner's data is its own ciphertext; never pack across owners (the DSL does not yet check this — enforce it by design review) |
+| Who encrypts / packing legality (1, 5) | Expressed in *which stage does the encrypting*, and **compiler-checked**: annotate independent-encryptor stages `@encryptors(independent)` and `encrypt()` of a column slice spanning records is a compile error (cross-owner SIMD packing). Single encryptor (default) → one `@client` stage packs records across slots, column-major |
 | Scheme selection (4) | `scheme CKKS { ... }` block. **The DSL is CKKS-only today** — a BFV/BGV design must use Track B |
 | Depth budget (5, 6) | `depth:` in the scheme block; per-instance via `scheme.override(depth: inst.depth)`. The compiler **errors** when the statically tracked multiplication chain exceeds the budget (a sound lower bound) and warns on heavy over-provisioning. `chebyshev` with a literal/const `degree:` is a **modeled subcircuit**: it charges `ceil(log2(degree+1)) + 1` levels into the tracker (59 → 7, 119 → 8, …); non-literal degrees stay depth-opaque |
 | Security ↔ parameters frontier (6) | Compile-time advisor: `nbc check` emits a `note:` computing `logQ ≈ first_mod + depth × q_i` and the minimum ring dimension for the declared security level (HE-standard tables), flagging declared `ring_dim`s below target (warning if no `scheme.override(security:)` dev profile covers them). Use it to trade q_i / depth / approximation degree against N |
@@ -140,7 +140,3 @@ implementations — read the design reference and the DSL code side by side:
 - **Threshold / multi-party keys**, **bootstrapping**, **interactive
   multi-round protocols** — not expressible; the DSL's model is
   one-pass client → server → client.
-- **Encryption-model enforcement** — the single-vs-independent-encryptor rule
-  (Stage 1/5) is not yet compiler-checked; a planned `@encryptors(...)`
-  annotation will lint cross-owner packing. Until then it is a design-review
-  obligation.
