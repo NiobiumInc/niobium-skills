@@ -101,13 +101,13 @@ implementations — read the design reference and the DSL code side by side:
 
 ## Pitfalls specific to the DSL (current state)
 
-1. **Heed the heuristic-fallback warning.** Encrypted-ness is tracked
-   structurally (annotations, builtin/user-fn return types, let-binding flow,
-   loop elements, combinator-closure params, wire fields, destructured
-   tuples) — all shipped examples compile with zero name-heuristic fallbacks.
-   If `nbc compile` warns that a variable's "encrypted-ness ... was decided by
-   the variable-name heuristic", don't ignore it: add an annotation
-   (`let x: enc<vec<f64>> = ...`) or rename the variable if it is plaintext.
+1. **Encrypted-ness is fully structural — names carry no meaning.** The
+   compiler classifies ciphertexts from annotations, builtin/user-fn return
+   types, let-binding flow, loop elements, combinator-closure params, wire
+   fields, and destructured tuples. There is no name heuristic: a variable
+   the flow cannot resolve is treated as plaintext, and if it was actually a
+   ciphertext the generated C++ fails to compile (never silently wrong). The
+   fix is always an annotation (`let x: enc<vec<f64>> = ...`).
 
 2. **Wire layouts are field-type-driven — names carry no special meaning.**
    Every wire serializes the same way: `enc<T>` → `{field}.bin`,
