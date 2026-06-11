@@ -29,7 +29,8 @@ to transcribe the design:
 | What crosses the wire (1, 8) | `wire` type declarations — the compiler generates all serialization; a stage's `reads(...)`/`writes(...)` clauses are a machine-checked message-flow spec |
 | Who encrypts / packing legality (1, 5) | Expressed in *which stage does the encrypting*. Single encryptor → one `@client` stage packs records across slots. Independent encryptors → each owner's data is its own ciphertext; never pack across owners (the DSL does not yet check this — enforce it by design review) |
 | Scheme selection (4) | `scheme CKKS { ... }` block. **The DSL is CKKS-only today** — a BFV/BGV design must use Track B |
-| Depth budget (5, 6) | `depth:` in the scheme block; per-instance via `scheme.override(depth: inst.depth)`. The compiler **errors** when the statically tracked multiplication chain exceeds the budget (a sound lower bound), and warns when the budget is heavily over-provisioned — the warning stays silent when depth is statically opaque (loops over encrypted ops, `chebyshev`, `*_norelin`, combinators, `extern_call`) |
+| Depth budget (5, 6) | `depth:` in the scheme block; per-instance via `scheme.override(depth: inst.depth)`. The compiler **errors** when the statically tracked multiplication chain exceeds the budget (a sound lower bound) and warns on heavy over-provisioning. `chebyshev` with a literal/const `degree:` is a **modeled subcircuit**: it charges `ceil(log2(degree+1)) + 1` levels into the tracker (59 → 7, 119 → 8, …); non-literal degrees stay depth-opaque |
+| Security ↔ parameters frontier (6) | Compile-time advisor: `nbc check` emits a `note:` computing `logQ ≈ first_mod + depth × q_i` and the minimum ring dimension for the declared security level (HE-standard tables), flagging declared `ring_dim`s below target (warning if no `scheme.override(security:)` dev profile covers them). Use it to trade q_i / depth / approximation degree against N |
 | Ring dimension / slots (6) | `ring_dim` field on the `Instance` struct (applied automatically); `n_slots = ring_dim / 2` for CKKS |
 | Security level (6) | `security:` in the scheme block; `scheme.override(security: not_set)` for toy/dev profiles |
 | Scaling / first modulus (6) | `precision:` (scaling mod size) and `first_mod:` in the scheme block |
@@ -76,6 +77,16 @@ to transcribe the design:
    parse/semantic checks over all examples; the end-to-end target verifies
    numerics. A new example should reach `0 warnings, 0 errors` on
    `nbc.py check`.
+
+5. **ML workloads: ground truth first, then sweep.** Require a full plaintext
+   model implementation and a representative test set (Stage 3 — firm, not
+   advisory). Then run the security-vs-accuracy sweep: vary (Chebyshev
+   `degree:`, `precision:` (q_i), `depth:`, `ring_dim`) and measure
+   end-to-end model accuracy at each point. The compiler's params note shows
+   where each configuration sits on the security frontier; the generated
+   `_ref` reference twins give each sweep point's accuracy (vs. the true
+   nonlinearities) without running encryption; the encrypted pipeline
+   confirms the final choice.
 
 ## Worked design↔implementation pairs
 

@@ -157,6 +157,17 @@ structure already in place:
    test data. This becomes the ground truth that every subsequent version is
    tested against.
 
+   **Firm requirement for machine-learning workloads:** the user must bring a
+   complete plaintext implementation of the model AND a representative test
+   set with expected outputs before any FHE design work proceeds. This is not
+   optional. Every FHE design decision downstream — Chebyshev approximation
+   degree, scaling modulus size (q_i), multiplicative depth, ring dimension —
+   trades accuracy against security and performance, and those trades can
+   only be evaluated against END-TO-END MODEL ACCURACY on real test data, not
+   against per-operation error bounds. Without the plaintext model and test
+   set there is no way to tell whether a cheaper parameter choice costs 0.1%
+   accuracy or destroys the model.
+
 2. Separate client-side and server-side responsibilities cleanly. The server
    must complete its work in one pass — no round trips, no branching on
    intermediate values.
@@ -373,6 +384,18 @@ compute the total bytes:
 
 Present these estimates to the user so they can assess whether the
 deployment is practical for their network and memory constraints.
+
+**The security-vs-accuracy sweep.** For ML workloads, treat parameter
+selection as an empirical optimization over the test set from Stage 3: sweep
+(approximation degree, q_i, depth, N) and measure end-to-end model accuracy at
+each point against the plaintext reference. The interplay is mechanical —
+higher approximation degree buys accuracy but costs depth; depth and q_i set
+log2(Q) = first_mod + depth x q_i; log2(Q) and the security target set the
+minimum ring dimension N; N sets performance. When implementing in the nb DSL
+(Stage 7 Track A), the compiler surfaces this frontier at compile time
+(chebyshev depth charging and a params note mapping logQ to the minimum N per
+security level), and the generated cleartext reference twins measure each
+sweep point's accuracy without re-running encryption.
 
 **For reference on parameter choices in practice:** The example applications in
 the references directory show concrete parameter selections with rationale.
