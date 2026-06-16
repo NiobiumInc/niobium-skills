@@ -43,8 +43,11 @@ answer four questions:
    network traffic, server memory), and what the adversary can do (semi-honest
    vs. malicious).
 
-2. **Who encrypts the data?** This question has major downstream consequences
-   for SIMD packing (Stage 5). There are two fundamentally different patterns:
+2. **Who encrypts the data, and at what cadence?** These two questions together
+   set the **packing strategy** (Stage 5) — and packing later determines whether
+   you can *filter* out-of-domain records, so settle it here.
+
+   *Who encrypts* — two fundamentally different patterns:
    - *Single encryptor*: one party holds all the input data and encrypts it
      (e.g., a company encrypting its own dataset for server processing). This
      party can freely pack records across SIMD slots within a ciphertext.
@@ -53,8 +56,27 @@ answer four questions:
      records to a bank). Different owners' data **cannot** share a ciphertext
      — doing so would require sharing encryption keys, letting one owner
      decrypt another's data.
-   Identify which pattern applies. If independent encryptors, note that
-   cross-record SIMD batching is not possible without violating privacy.
+   If independent encryptors, cross-record SIMD batching is not possible without
+   violating privacy.
+
+   *Query cadence* — does the workload run **one query at a time** (interactive,
+   latency-oriented) or over a **batch** the caller already holds
+   (throughput-oriented)? This is orthogonal to who-encrypts, and it decides
+   `packing_mode`:
+
+   | Encryptor | Cadence | `packing_mode` |
+   |---|---|---|
+   | Single (owns all data) | Batch | **batched** (column-major SIMD: one ciphertext per feature, records across slots) |
+   | Single | One-at-a-time | **per_record** (or micro-batch) |
+   | Independent encryptors | (any) | **per_record** |
+
+   Why it matters downstream: **per_record** decrypts each query independently, so
+   individual out-of-domain failures can be isolated, skipped, and *counted*
+   (proportional filtering). **batched** decrypts the whole batch in one
+   `Decode`, so a single out-of-domain slot value throws and takes the entire
+   batch down — there is no per-record isolation, and any filtering must happen
+   **pre-flight and be airtight** (Stages 3 and 5). Record `packing_mode`; it is
+   an input to the feasibility check in Stage 3.
 
 3. **Who should see the output?**
    Determine who holds the decryption key. Flag key proliferation as a risk.
@@ -184,11 +206,132 @@ structure already in place:
 5. Replace non-linear functions (division, comparison, square roots, sigmoid,
    tanh) with polynomial approximations — typically Chebyshev series. Each
    approximation adds depth, so there's a direct tradeoff between accuracy
-   and cost. Ensure inputs are normalized to the approximation's valid range.
+   and cost. Ensure inputs are normalized to the approximation's valid range,
+   and run the **activation-range feasibility check** below before committing
+   to the model as given — a polynomial approximation is only as good as the
+   match between its domain and the operands that actually reach it.
 
 6. Constrain data types and precision. Move from floating-point to integer or
    fixed-point arithmetic. Aim for 32 bits or less of precision. Consider
    non-linear scaling of inputs to reduce dynamic range.
+
+### Activation-range feasibility check (and when to recommend changing the model)
+
+A Chebyshev (or Taylor) approximation is only valid *inside* its fit interval;
+outside that interval it does not merely lose accuracy, it diverges — by many
+orders of magnitude for a steep function like sigmoid. So before locking in the
+model, check that each non-linearity's approximation can be made both **safe**
+(bounded) and **accurate** within the depth budget. There are two distinct
+failure modes, and they have two different owners:
+
+- **Out-of-range (a design-side bug).** The approximation domain does not cover
+  the operands that actually reach the function. The polynomial evaluates to
+  astronomical values, which overflow the CKKS scale (decrypt fails with
+  "approximation error too high") or, at low degree, return bounded garbage.
+  *Fix on the design side:* set the domain from the measured operand range. Use
+  a per-call domain when different call sites see different ranges (e.g., a
+  per-layer domain for each activation in a network), since a tighter interval
+  is a better fit at a fixed degree.
+
+- **Range-too-wide-for-budget (escalate beyond domain tuning).** Even with the
+  domain matched to the operand range, no approximation degree affordable within
+  the depth budget meets the end-to-end accuracy floor — widening the domain to
+  cover the full range forces a low-degree polynomial to smear across the
+  function's steep region. Domain tuning alone cannot fix this. When you hit it,
+  walk the escalation ladder in step 4 below: **filter** the out-of-domain
+  records if that stays within budget, else **change the incoming model**.
+  (Often the offending operands are rare outliers, and filtering them keeps a
+  tight, accurate domain — see "Filter, don't force.")
+
+Run the check like this, using the plaintext model and representative test set
+that Stage 3 requires:
+
+1. **Measure** the input range to every non-linearity over the test set — the
+   min/max and a high percentile band (e.g. 0.1–99.9%) to separate the genuine
+   operating range from rare outliers.
+2. **Budget the degree.** From the depth budget (Stages 5–6) and the number of
+   approximations on the critical path, back out the maximum degree affordable
+   per call (`chebyshev` charges `ceil(log2(degree+1)) + 1` levels).
+3. **Estimate achievable accuracy — on the real polynomial, not the twin.**
+   Build the actual Chebyshev approximation at that maximum degree over the
+   measured range, run the forward pass with it in plaintext, and compare to the
+   plaintext model. **Do not use the generated `_ref` cleartext twins for this
+   measurement**: the twins apply the *true* activation, so they report ~perfect
+   accuracy and hide exactly the polynomial degradation you are trying to bound
+   (this masking is what lets domain problems survive to the encrypted run). If
+   the real polynomial clears the floor over the full measured range, proceed
+   with the matched domain.
+4. **If it cannot clear the floor, escalate cheapest-first — don't burn the
+   iteration budget on parameters that cannot win.** Out-of-domain operands are
+   usually a tiny fraction of records, so the cheapest fix is often not to widen
+   the domain (which craters accuracy) but to keep the domain tight and *filter*
+   the offenders. The ladder, in order:
+   - **a. Filter the out-of-domain records** (keep the tight, accurate domain;
+     reject the records whose pre-activations escape it; accept a small,
+     reported reject rate). This is a two-threshold, packing-aware decision —
+     see *"Filter, don't force"* below.
+   - **b. (batched only) Drop batching.** If an airtight pre-flight filter would
+     reject too many, recommend switching to per-record packing so failures can
+     be isolated post-flight instead of taking the whole batch down.
+   - **c. Change the model.** If filtering can't stay within the reject budget —
+     or its reject set is enriched for the target class — recommend **bounding
+     the pre-activations** and retraining: normalization before each
+     non-linearity (BatchNorm/LayerNorm), weight/activation normalization, or
+     folding a per-layer scale into the linear weights and the activation
+     closure. BatchNorm is usually cleanest — it keeps each activation's input
+     near unit scale (a degree-5–7 sigmoid/tanh over a small domain is then
+     accurate) and at inference folds into the adjacent linear layer at **zero
+     added multiplicative depth**.
+
+State whatever you recommend explicitly, with the evidence: the measured range,
+the max in-budget degree, the resulting *polynomial* accuracy, the reject rate
+and its target-class composition, and the floor(s) missed. Model changes require
+**retraining** (BatchNorm cannot be bolted onto a trained model — its effect
+depends on being present during training); check whether the user already has a
+normalized/bounded variant before asking them to train one. Always deliver a
+best-effort runnable design (tight domain + the filter) so the user has a working
+pipeline to compare against.
+
+#### Filter, don't force: the two-threshold check and the composition guard
+
+When a tight domain is accurate but a few records escape it, the right move is to
+**reject those records**, not to distort the approximation for everyone. Make it
+a bounded, measured decision:
+
+- **What you filter against (and why it's a proxy).** The true constraint is the
+  activation's domain on its **pre-activations** (`W·x + b`), but the client
+  can't evaluate that — the *weights are the server's*. So the runtime check is a
+  **per-feature input-bounds box** (`feature_bounds.csv`), a deliberately loose
+  outer approximation of the true acceptance polytope. The **design phase**
+  (which has the model) calibrates that box: seed it from training-data
+  per-feature min/max, then tighten until admitted records keep their
+  pre-activations inside the domain on the representative set. The design emits
+  the CSV (input ranges only — **no weights**, so it's trust-model-safe); the
+  client enforces it pre-flight.
+
+- **The two thresholds.** Search `(domain, degree)` for a point satisfying **both**
+  `reject_rate ≤ R_max` (default **1%**) **and** `polynomial_accuracy ≥ A_min`
+  (the goal floor), within the depth budget. Widening the domain trades accuracy
+  for fewer rejects, so this is a joint search, not a one-way "widen until it
+  passes."
+
+- **Packing-aware enforcement** (set by `packing_mode` from Stage 1):
+  - *per_record*: pre-flight box filter **plus** a per-record `try/catch` around
+    decrypt; measure the residual fallback rate; pass if `reject + fallback ≤
+    R_max`.
+  - *batched*: the pre-flight filter must be **airtight** (zero overflowing
+    records admitted — one bad slot fails the whole batch `Decode`). The single
+    encryptor filters its own plaintext before packing. Post-flight is binary
+    (the batch decrypts or it doesn't), so there is no proportional safety net.
+    If the airtight filter's reject rate exceeds `R_max`, take ladder rung **b**.
+
+- **The composition guard (do not skip).** The reject set is **not random** — for
+  some workloads out-of-domain inputs correlate with the positive class, so a 1%
+  reject rate can drop a large share of the cases you care about. Measure the
+  **target-class rate within the reject set** against the base rate. If it is
+  enriched beyond a configurable factor, **filtering is disallowed** — route to
+  rung **b/c** instead. Always **report** the reject rate together with its
+  target-class composition; never surface "1% rejected" without it.
 
 **For detailed guidance:** Read `references/building-your-first-fhe-application.md`
 and `references/fhe-application-dialogue.md` (a worked example showing all
@@ -254,6 +397,28 @@ share a ciphertext:
 their own data, do not use column-major packing across those parties.
 Column-major packing is for single-encryptor scenarios. Misapplying it
 creates a design where one party's key can decrypt another party's data.
+
+**Where the out-of-domain filter lives (set by `packing_mode`).** If Stage 3's
+feasibility check chose to *filter* out-of-domain records (rather than change
+the model), the packing mode dictates where and how:
+
+- *per_record packing* — each query is its own ciphertext, so filtering is
+  proportional and has two layers: a **pre-flight** input-bounds check at the
+  `@client` encrypt step (reject before encrypting), plus a **per-record
+  `try/catch`** around decrypt that catches anything the proxy box let through
+  (mark it a fallback). Both are counted toward the reject budget.
+- *batched / column-major packing* — the whole batch decrypts in a single
+  `Decode`, so one out-of-domain slot throws and fails *every* record. There is
+  no per-record `try/catch` to fall back on. The filter must therefore be
+  **pre-flight and airtight**: the single encryptor screens its own plaintext
+  against the bounds box and drops offenders *before* packing, so the batch it
+  encrypts is guaranteed in-domain. Post-flight is binary. If too many records
+  would be dropped to stay airtight, do not pack — fall back to per-record
+  (Stage 3 ladder rung b).
+
+In both cases the bounds box is the design-emitted `feature_bounds.csv`
+(input ranges only); the `@client` stage enforces it. Report the reject and
+fallback rates as protocol outputs (Stage 8).
 
 **Comparison strategies in CKKS.** Since CKKS operates on approximate reals,
 exact comparison is not directly possible. Common approaches include:
@@ -397,6 +562,25 @@ minimum ring dimension N; N sets performance. When implementing in the nb DSL
 security level), and the generated cleartext reference twins measure each
 sweep point's accuracy without re-running encryption.
 
+**When the sweep cannot win, walk the Stage 3 ladder — ending in a model
+change.** If the whole in-budget sweep is exhausted and no point meets the
+accuracy floor — typically because an activation's operand range is too wide for
+any affordable degree (the range-too-wide-for-budget mode from the Stage 3
+feasibility check) — do not report only failure. Apply the Stage 3 escalation
+ladder, cheapest first: (a) if a tight, accurate domain plus an out-of-domain
+**filter** stays within `R_max` and the reject set is not enriched for the
+target class, ship that; (b) if a *batched* design can't filter airtightly
+within budget, recommend dropping batching to per-record; (c) otherwise emit a
+consolidated recommendation to **change the model** — bound the pre-activations
+via normalization (BatchNorm/LayerNorm) and retrain, or apply equivalent
+weight/input scaling, so a low-degree approximation over a narrow domain becomes
+both safe and accurate. Back whatever you recommend with the sweep evidence (the
+frontier explored, the best accuracy reached, the reject rate and its
+target-class composition, and the floor missed), and name the limiting factor —
+model dynamic range, not the FHE parameters. This is the end-of-run sibling of
+the Stage 3 early gate: the gate catches it before iterating; this catches it if
+iteration confirms no parameter choice suffices.
+
 **For reference on parameter choices in practice:** The example applications in
 the references directory show concrete parameter selections with rationale.
 
@@ -518,7 +702,13 @@ As a final design step, document the full protocol and its security properties:
    transciphering is used, what symmetric cipher, and how the symmetric key
    is managed. If the decryptor *is* the consumer (e.g., a user checking
    their own data), output integrity is not a concern.
-6. Threats not addressed (malicious adversaries, side channels, exhaustive
+6. Coverage and the input-bounds filter: if the design rejects out-of-domain
+   inputs (Stages 3, 5), document the bounds the client enforces, the reported
+   reject and fallback rates, and the target-class composition of the reject set
+   — a model that meets its accuracy floor only by dropping queries must report
+   how many, and which kind. Note the incidental leakage this adds: rejection is
+   observable, so the bounds reveal a coarse decision boundary on the inputs.
+7. Threats not addressed (malicious adversaries, side channels, exhaustive
    query attacks, collusion).
 
 This documentation serves both as a security specification and as a guide
@@ -565,6 +755,14 @@ Throughout the design process, keep these principles in mind:
   legitimately visible to the decryptor. If the output can be used to infer
   private inputs, that's a design problem FHE doesn't solve — you need
   additional protections.
+
+- **The model is a design input you can push back on.** A trained model is not
+  fixed scripture. When a non-linearity's operand range is too wide for any
+  in-budget polynomial approximation to be both bounded and accurate, the right
+  move is to recommend changing the model (normalize the pre-activations, e.g.
+  with BatchNorm, and retrain) — not to burn the iteration budget on parameters
+  that cannot win. Keep the approximation domain matched to the operand range,
+  and escalate to a model recommendation when the range itself is the problem.
 
 - **Test against the plaintext reference at every stage.** When results
   diverge, the three most likely causes are: exhausted noise budget,
