@@ -1,10 +1,10 @@
 # FHE Application Design Skill
 
-A Claude skill that guides developers through designing and building Fully Homomorphic Encryption (FHE) applications using OpenFHE. It provides an 8-stage methodology covering the full design process, from establishing a privacy model through implementation and protocol specification.
+An Agent Skill that guides developers through designing and building Fully Homomorphic Encryption (FHE) applications using OpenFHE. It provides an 8-stage methodology covering the full design process, from establishing a privacy model through implementation and protocol specification.
 
 ## What This Skill Does
 
-When a user asks Claude to design an FHE application, this skill provides structured guidance through eight stages:
+When a user asks the agent to design an FHE application, this skill provides structured guidance through eight stages:
 
 1. **Privacy model** — identify parties, adversaries, encryption model (single vs. independent encryptors), output privacy, and output integrity (transciphering)
 2. **Feasibility assessment** — data-obliviousness, arithmetic lane, multiplicative depth, SIMD parallelism
@@ -29,18 +29,45 @@ The skill does *not* assume prior FHE experience. It is designed to take a devel
 
 ## Installation
 
-Copy the `fhe-application-design/` directory (including `references/`) to one of these locations:
+This is an [Agent Skill](https://agentskills.io/specification) — a portable `SKILL.md`
+plus `references/`. It works with any agent that supports the standard.
 
-- **Per-project:** `.claude/skills/fhe-application-design/` at the root of your repository
-- **Per-user:** `~/.claude/skills/fhe-application-design/` for availability across all projects
+### Recommended: universal installer
 
-The directory structure must be preserved — SKILL.md references files in `references/` by relative path.
+```bash
+npx skills add NiobiumInc/fhe-application-design
+```
+
+This uses [skills.sh](https://skills.sh), a third-party cross-agent installer. It
+auto-detects your agent and writes the skill to the right directory — supporting Claude
+Code, Cursor, Codex, GitHub Copilot, Windsurf, Gemini, Cline, and ~20 more.
+
+### Fallback: manual install
+
+If you prefer to place the folder yourself, copy the whole `fhe-application-design/`
+directory (preserving `references/`) into the location for your agent:
+
+| Agent | Per-project | Per-user |
+| --- | --- | --- |
+| Claude family | `.claude/skills/fhe-application-design/` | `~/.claude/skills/fhe-application-design/` |
+| Codex CLI | `.agents/skills/fhe-application-design/` | `~/.agents/skills/fhe-application-design/` |
+| Other agentskills.io agents (Cursor, Copilot, Windsurf, Gemini, Cline) | `.agents/skills/fhe-application-design/` | `~/.agents/skills/fhe-application-design/` |
+
+Notes:
+
+- The directory name must match the `name` in `SKILL.md` frontmatter (`fhe-application-design`).
+- The directory structure must be preserved — `SKILL.md` references files in `references/`
+  by relative path.
+- Your agent may need a restart to detect the newly installed skill.
+- Codex scans `.agents/skills` from the current working directory up to the repo root.
+- For any agent not listed here, use the `npx skills add` installer above or see
+  [agentskills.io](https://agentskills.io) — don't assume an install path.
 
 ## Directory Structure
 
 ```
 fhe-application-design/
-├── SKILL.md                  # Main skill instructions (read by Claude)
+├── SKILL.md                  # Main skill instructions (read by the agent)
 ├── README.md                 # This file (for human readers)
 ├── references/               # Domain knowledge files read on demand
 │   ├── fhe-privacy-model.md
@@ -57,7 +84,7 @@ fhe-application-design/
     └── evals.json
 ```
 
-The `references/` directory contains ~1,400 lines of domain knowledge that Claude reads selectively during each stage. These include worked examples (set membership search, similarity fetch, network intrusion detection), scheme selection guidance, and an OpenFHE API catalog.
+The `references/` directory contains ~1,400 lines of domain knowledge that the agent reads selectively during each stage. These include worked examples (set membership search, similarity fetch, network intrusion detection), scheme selection guidance, and an OpenFHE API catalog.
 
 The `evals/` directory contains three test prompts (credit scoring, credential search, salary statistics) with assertions for regression testing. These are development artifacts — not needed by end users, but useful for anyone modifying SKILL.md.
 
