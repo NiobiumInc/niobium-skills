@@ -1,6 +1,6 @@
-# FHE Application Design: an Agent Skill for FHE
+# FHE Application Design: an AI Agent Skill for FHE
 
-An Agent Skill that guides developers through designing and building Fully Homomorphic Encryption (FHE) applications with the Niobium DSL and OpenFHE. It provides an 8-stage methodology covering the full design process, from establishing a privacy model through implementation and protocol specification.
+An AI Agent Skill that guides developers through designing and building Fully Homomorphic Encryption (FHE) applications with the Niobium DSL and OpenFHE. It provides an 8-stage methodology covering the full design process, from establishing a privacy model through implementation and protocol specification.
 
 ## What This Skill Does
 
