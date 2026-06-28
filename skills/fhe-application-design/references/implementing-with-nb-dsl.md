@@ -40,7 +40,7 @@ to transcribe the design:
 | Slot aggregation (5) | `ct \|> slot_sum(n_slots)` (EvalSum, no depth cost) |
 | Deferred relinearization (5) | `a *_norelin b` accumulation followed by `relin(acc)` |
 | Four-program architecture (7) | One `@stage("name")` function per program — keygen / encrypt / server-compute / decrypt each becomes a standalone binary with CLI parsing, serialization, and (for `@server @hardware` stages) record/replay instrumentation |
-| run_test (7) | A `test-<example>` target in `dsl_fhe/Makefile` that runs the stage binaries in order and verifies against the plaintext reference |
+| run_test (7) | Run the generated stage binaries in order, verifying against the plaintext reference (or a `test-<example>` Makefile target, if you contribute the app as an in-repo example) |
 | Protocol spec (8) | Largely self-documenting: domains + wire types + `reads`/`writes` state the message flow; write the threat-model prose in the example's README |
 
 ## Workflow
@@ -48,10 +48,10 @@ to transcribe the design:
 1. **Plaintext preprocessing stays outside the DSL.** Anything string-shaped or
    data-wrangling (name encoding, Soundex, dataset generation, padding,
    computing the expected reference output) belongs in a small Python harness
-   (`examples/<name>/harness/`). The DSL sees only fixed-length numeric
-   matrices/vectors, loaded with `load_matrix`/`load_vec`. The harness should
-   also print/compute the **expected plaintext result** so the decrypt stage
-   can verify against it — this is the Stage 3 "ground truth" discipline.
+   (a `harness/` directory in your project). The DSL sees only fixed-length
+   numeric matrices/vectors, loaded with `load_matrix`/`load_vec`. The harness
+   should also print/compute the **expected plaintext result** so the decrypt
+   stage can verify against it — this is the Stage 3 "ground truth" discipline.
    The compiler reinforces it: for every stage free of non-twinnable
    constructs (`extern_call`, `replicate`, `running_sums`, `load_model`), it
    ALSO generates a `<stage>_ref` **cleartext reference twin** — the same
@@ -60,7 +60,8 @@ to transcribe the design:
    pipeline alongside the encrypted one; the difference between the two
    outputs is exactly the approximation + noise error.
 
-2. **Write three files** in `dsl_fhe/examples/<name>/`:
+2. **Write three files** in your project directory (the current working
+   directory by default):
    - `shared.niob` — `Instance` struct (per-profile `ring_dim`, depth, sizes),
      directory-layout helpers, `wire` types.
    - `client.niob` — `scheme` block, `requires`, then `@client` stages:
@@ -68,15 +69,24 @@ to transcribe the design:
    - `server.niob` — `@server @stage(...) @hardware(cache_key: [...])` compute
      stage(s) plus shared circuit functions.
 
-3. **Add Makefile targets** (`<name>` and `test-<name>`) following
-   `HOWTO.md` — compile (`nbc.py compile`), build (CMake), then run the stage
-   binaries end-to-end with verification. Wire into `examples`,
-   `test-examples`, `test-compiler`, and `clean`.
+3. **Compile and build in your project directory.** From your project
+   directory, run the cross-compiler against your `.niob` files, emitting the
+   generated C++ into your project:
+   ```
+   python3 <niobium-client>/dsl_fhe/xcomp/nbc.py compile \
+       shared.niob client.niob server.niob --outdir nb_out
+   ```
+   The generated `nb_out/` is a self-contained CMake project (depends only on
+   OpenFHE): build it with `cmake -S nb_out -B nb_out/build && cmake --build
+   nb_out/build`, then run the stage binaries in order and verify against the
+   plaintext reference. (To contribute the app as a niobium-client example
+   instead, add it under `dsl_fhe/examples/<name>/` with `make <name>` /
+   `test-<name>` targets per `HOWTO.md`.)
 
-4. **Iterate with the compiler's feedback**: `make test-compiler` runs
-   parse/semantic checks over all examples; the end-to-end target verifies
-   numerics. A new example should reach `0 warnings, 0 errors` on
-   `nbc.py check`.
+4. **Iterate with the compiler's feedback**: run `nbc.py check shared.niob
+   client.niob server.niob` from your project directory for parse/semantic
+   checks; aim for `0 warnings, 0 errors`, then confirm numerics with the
+   end-to-end run above.
 
 5. **ML workloads: ground truth first, then sweep.** Require a full plaintext
    model implementation and a representative test set (Stage 3 — firm, not
