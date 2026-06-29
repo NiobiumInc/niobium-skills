@@ -13,6 +13,11 @@ description: >
   even if the user doesn't explicitly say "FHE" — if they describe a scenario
   where computation must happen on data that the computing party cannot see,
   this skill applies.
+license: Apache-2.0
+compatibility: OpenFHE (C++ or Python); Niobium nb FHE DSL (niobium-client)
+metadata:
+  author: Niobium Microsystems
+  version: 0.4.0
 ---
 
 # FHE Application Design
@@ -587,7 +592,13 @@ the references directory show concrete parameter selections with rationale.
 ## Stage 7: Implement, Test, and Iterate
 
 There are two implementation tracks. Choose based on what is available and
-what the design requires:
+what the design requires.
+
+**Build in the current working directory by default.** Generate the application
+in your current working directory unless the user explicitly directs otherwise.
+Do not create files inside the niobium-client repository (e.g., under
+`dsl_fhe/examples/`) or modify its `Makefile`/build files **unless the user
+explicitly asks to do that**.
 
 - **Track A — the `nb` FHE DSL (preferred).** If the
   [niobium-client](https://github.com/NiobiumInc/niobium-client) repository is

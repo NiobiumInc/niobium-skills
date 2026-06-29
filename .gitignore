@@ -4,3 +4,13 @@
 # OS files
 .DS_Store
 Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+
+# Python / Node — only relevant if a skill adds a scripts/ dir
+__pycache__/
+*.pyc
+.venv/
+node_modules/
