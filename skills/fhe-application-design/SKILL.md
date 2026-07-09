@@ -592,19 +592,22 @@ The key parameters for CKKS (and analogous choices for BFV/BGV):
 
 - **Ring dimension (N).** Determines the number of SIMD slots (N/2 for CKKS,
   N for BFV/BGV) and the achievable security level for a given modulus size.
-  **The backend floor is 2^16 (65,536); 2^15 is not supported.** N must also
-  be large enough that the total modulus `logQ` is secure at the target level:
-  compute `logQ ≈ first_mod + depth × scaling_mod` (plus the hybrid
-  key-switching special modulus, which adds materially), then pick the
-  smallest secure N. For the ML workloads here — depth ~12, scaling ~45,
-  first_mod ~55 → logQ ≈ 600 — **128-bit security requires N = 2^16**. Do
-  **not** author 2^15: it both undershoots the backend floor and fails
-  security for any non-trivial logQ. Pick N = 2^16 (n_slots = 32,768) for the
-  secure profile from the start. **Set it as a literal `ring_dim: 65536` in the
-  `scheme` block** — that is the field codegen honors. Do *not* rely on carrying
-  `ring_dim` only on the `Instance` struct: when the scheme block omits it,
-  codegen falls back to `n_slots` (= N/2 = 32,768), silently dropping below the
-  floor and failing key generation at build time.
+  **The backend floor is currently 2^16 (65,536); the hardware does not yet
+  support 2^15.** Smaller N is attractive — fewer slots but smaller ciphertexts
+  and faster ops — and may become supported, so treat this as a deployment
+  constraint, not a permanent rule. **Default to N = 2^16.** Only author 2^15 if
+  the user explicitly approves it for performance; if they don't approve, use
+  2^16 as the floor. Consent does not waive security: N must still be large
+  enough that the total modulus `logQ` is secure at the target level — compute
+  `logQ ≈ first_mod + depth × scaling_mod` (plus the hybrid key-switching special
+  modulus, which adds materially) and confirm the chosen N is secure for it. For
+  the ML workloads here — depth ~12, scaling ~45, first_mod ~55 → logQ ≈ 600 —
+  128-bit security requires N = 2^16 regardless. **Set the chosen N as a literal
+  `ring_dim` in the `scheme` block** (e.g. `ring_dim: 65536` for 2^16) — that is
+  the field codegen honors. Do *not* rely on carrying `ring_dim` only on the
+  `Instance` struct: when the scheme block omits it, codegen falls back to
+  `n_slots` (= N/2), silently dropping the ring and failing key generation at
+  build time.
 
 - **Multiplicative depth.** Set to match your circuit's depth budget from
   Stage 5. This is the most important parameter — it drives the modulus chain
