@@ -37,6 +37,23 @@ Read the relevant reference file when you need the detail for a given stage.
 The stages mirror a real FHE design process. Do not skip stages — each one
 produces inputs that the next stage depends on.
 
+**Three versions of the application.** Keep these distinct throughout — the
+whole methodology is the disciplined path from the first to the third:
+
+1. **The reference** — the full plaintext computation, the ground truth. The
+   *user* provides this (for ML workloads it is a firm requirement; see Stage 3).
+   Every later version is measured against it.
+2. **The twin** — a plaintext model of the *FHE-shaped* computation: the same
+   algorithm but with every operation replaced by an FHE-friendly one
+   (non-linearities → polynomial approximations), FHE-friendly data types, and
+   precision quantized to match the CKKS scaling. Building the twin is *ours*
+   (the skill's / the agent's) job. It is introduced in Stage 3, parameterized
+   through Stages 4–6, and completed and validated against the reference in
+   Stage 7 — the gate before any encrypted code is written.
+3. **The FHE program** — the encrypted implementation (Stage 8). If the twin is
+   decode-safe and matches the reference, this step should reproduce it modulo
+   encryption noise.
+
 ## Stage 1: Establish the Privacy Model
 
 Before thinking about circuits, parameters, or code, work with the user to
@@ -266,6 +283,17 @@ structure already in place:
    fixed-point arithmetic. Aim for 32 bits or less of precision. Consider
    non-linear scaling of inputs to reduce dynamic range.
 
+**Steps 2–6 are the beginning of the twin.** The reference (step 1) stays as the
+user gave it — the ground truth. Steps 2–6 start the *second* version, the
+faithful twin: the FHE-shaped plaintext computation (branchless, polynomial
+non-linearities, fixed-point types). You cannot finish it yet — the exact
+Chebyshev degrees/domains are fixed in Stage 5 and the quantization step
+(Δ = 2^scaling) in Stage 6 — so at this stage the twin is a skeleton with those
+knobs still open. Keep it parameterized: it is the object you will sweep to
+*select* those parameters in Stages 5–6, then freeze, complete, and validate
+against the reference in Stage 7. Do not fold the two versions together; the gap
+between them is exactly what Stage 7 measures.
+
 ### Activation-range feasibility check (and when to recommend changing the model)
 
 **This is a pre-design precondition, not a mid-design check — run it as a gate
@@ -376,14 +404,15 @@ a bounded, measured decision:
   rejection happens *before* encryption, as part of the client's input
   preparation: the client reads `feature_bounds.csv`, drops out-of-domain
   records, and only then encodes/encrypts the admitted batch. Do **not**
-  implement the bounds check inside the `.niob` program. An out-of-domain record
-  isn't a "slightly wrong" answer — the polynomial diverges on it and (in a
-  batched pack) overflows the shared scale so the *entire* batch fails to
-  `Decode`; the float reference twin can't see this (no scale), so it must be
-  prevented at the input, not patched in-circuit. Authoring the check into the
-  `.niob` also forces fragile column-major compaction and wire-serialization
-  workarounds for no benefit. Keep the `.niob` a plain forward pass over the
-  admitted batch; let the client wrapper enforce the box.
+  implement the bounds check inside the FHE program (the server circuit). An
+  out-of-domain record isn't a "slightly wrong" answer — the polynomial diverges
+  on it and (in a batched pack) overflows the shared scale so the *entire* batch
+  fails to `Decode`; the float reference twin can't see this (no scale), so it
+  must be prevented at the input, not patched in-circuit. Authoring the check
+  into the server circuit also forces fragile column-major compaction and
+  wire-serialization workarounds for no benefit. Keep the server circuit a plain
+  forward pass over the admitted batch; let the client (the encrypt program)
+  enforce the box.
 
 - **What you filter against (and why it's a proxy).** The true constraint is the
   activation's domain on its **pre-activations** (`W·x + b`), but the client
@@ -396,13 +425,13 @@ a bounded, measured decision:
   the CSV (input ranges only — **no weights**, so it's trust-model-safe); the
   client enforces it pre-flight.
 
-- **Where the box lives (fixed path — do not improvise).** The harness stages
-  `feature_bounds.csv` into the run's **`io/`** directory, alongside
-  `input.bin`, and the `@client` stage runs with its working directory at the
-  build root. Read the box from exactly **`io/feature_bounds.csv`** — the same
-  fixed I/O contract as the input data. Do **not** invent another location
-  (e.g. `model/`): a path the harness doesn't stage to makes the stage crash
-  with `Cannot open .../feature_bounds.csv` and the whole candidate fails.
+- **Where the box lives (fixed path — do not improvise).** Treat
+  `feature_bounds.csv` as part of the client's fixed I/O contract, shipped and
+  read from the same agreed location as the input data (the encrypt program reads
+  it before packing). Pin that path once and use it on both the design side (which
+  emits the CSV) and the client side (which reads it). Do **not** invent a second
+  location: a path the client isn't looking in makes it fail with
+  `Cannot open .../feature_bounds.csv` and the whole run fails.
 
 - **The two thresholds.** Search `(domain, degree)` for a point satisfying **both**
   `reject_rate ≤ R_max` (default **1%**) **and** `polynomial_accuracy ≥ A_min`
@@ -510,8 +539,8 @@ feasibility check chose to *filter* out-of-domain records (rather than change
 the model), the packing mode dictates where and how:
 
 - *per_record packing* — each query is its own ciphertext, so filtering is
-  proportional and has two layers: a **pre-flight** input-bounds check at the
-  `@client` encrypt step (reject before encrypting), plus a **per-record
+  proportional and has two layers: a **pre-flight** input-bounds check in the
+  client's encrypt step (reject before encrypting), plus a **per-record
   `try/catch`** around decrypt that catches anything the proxy box let through
   (mark it a fallback). Both are counted toward the reject budget.
 - *batched / column-major packing* — the whole batch decrypts in a single
@@ -524,8 +553,8 @@ the model), the packing mode dictates where and how:
   (Stage 3 ladder rung b).
 
 In both cases the bounds box is the design-emitted `feature_bounds.csv`
-(input ranges only); the `@client` stage enforces it. Report the reject and
-fallback rates as protocol outputs (Stage 8).
+(input ranges only); the client enforces it. Report the reject and
+fallback rates as protocol outputs (Stage 9).
 
 **Comparison strategies in CKKS.** Since CKKS operates on approximate reals,
 exact comparison is not directly possible. Common approaches include:
@@ -602,12 +631,13 @@ The key parameters for CKKS (and analogous choices for BFV/BGV):
   `logQ ≈ first_mod + depth × scaling_mod` (plus the hybrid key-switching special
   modulus, which adds materially) and confirm the chosen N is secure for it. For
   the ML workloads here — depth ~12, scaling ~45, first_mod ~55 → logQ ≈ 600 —
-  128-bit security requires N = 2^16 regardless. **Set the chosen N as a literal
-  `ring_dim` in the `scheme` block** (e.g. `ring_dim: 65536` for 2^16) — that is
-  the field codegen honors. Do *not* rely on carrying `ring_dim` only on the
-  `Instance` struct: when the scheme block omits it, codegen falls back to
-  `n_slots` (= N/2), silently dropping the ring and failing key generation at
-  build time.
+  128-bit security requires N = 2^16 regardless. **Set the ring dimension
+  explicitly** — in OpenFHE, `CCParams<CryptoContextCKKSRNS>::SetRingDim(65536)`
+  — rather than relying on it being inferred from the batch/slot count. An
+  under-set ring silently drops below the floor and fails key generation. (If you
+  take the optional DSL path, the equivalent is a literal `ring_dim` in the
+  `scheme` block; don't carry it only on the `Instance` struct, or codegen falls
+  back to `n_slots` = N/2.)
 
 - **Multiplicative depth.** Set to match your circuit's depth budget from
   Stage 5. This is the most important parameter — it drives the modulus chain
@@ -722,11 +752,12 @@ selection as an empirical optimization over the test set from Stage 3: sweep
 each point against the plaintext reference. The interplay is mechanical —
 higher approximation degree buys accuracy but costs depth; depth and q_i set
 log2(Q) = first_mod + depth x q_i; log2(Q) and the security target set the
-minimum ring dimension N; N sets performance. When implementing in the nb DSL
-(Stage 7 Track A), the compiler surfaces this frontier at compile time
-(chebyshev depth charging and a params note mapping logQ to the minimum N per
-security level), and the generated cleartext reference twins measure each
-sweep point's accuracy without re-running encryption.
+minimum ring dimension N; N sets performance. Run this sweep against the
+**faithful twin** (Stage 7), not the encrypted build: the twin measures each
+sweep point's accuracy in seconds without re-running encryption. (If you take
+the optional DSL path, its compiler also surfaces this frontier at compile time —
+Chebyshev depth charging and a params note mapping logQ to the minimum N per
+security level.)
 
 **When the sweep cannot win, walk the Stage 3 ladder — ending in a model
 change.** If the whole in-budget sweep is exhausted and no point meets the
@@ -750,10 +781,61 @@ iteration confirms no parameter choice suffices.
 **For reference on parameter choices in practice:** The example applications in
 the references directory show concrete parameter selections with rationale.
 
-## Stage 7: Implement, Test, and Iterate
+## Stage 7: Build and Validate the Faithful Twin
 
-There are two implementation tracks. Choose based on what is available and
-what the design requires.
+By this point Stages 4–6 have fixed the scheme, the circuit, and the parameters,
+so the twin can finally be *completed*. The **faithful twin** is a plaintext
+(e.g. numpy) model of the exact circuit — the *same* Chebyshev polynomials, the
+*same* fixed-point quantization step (Δ = 2^scaling), the *same* packing and
+rescale points the FHE program will run. It is not the reference (that is the
+*ideal* algorithm); the twin predicts encrypted behavior modulo random noise.
+
+This is the same twin you were already sweeping in Stages 5–6 — there it was the
+**search proxy** that let you *choose* the parameters cheaply; here you **freeze
+it at the chosen point, complete it, and validate it.** Two properties are why
+the twin carries this much weight:
+
+- **It is the executable spec.** Every parameter the design turns — depth,
+  scaling modulus, Chebyshev degree/domain, packing — is a knob in the twin. A
+  decode-safe, accurate twin *is* the design; the FHE build (Stage 8) is a
+  mechanical downstream step that should reproduce it modulo noise.
+- **It makes iteration cheap.** A twin sweep runs in seconds; a full encrypted
+  build+run is minutes to hours. That asymmetry is the whole point of validating
+  here, before the expensive build — catch a bad parameter choice against the
+  twin, not against a multi-hour encrypted run.
+
+Build and validate it:
+
+1. **Complete the twin** at the frozen parameters and confirm it is
+   **decode-safe** — the modulus-chain budget from Stage 6 must hold, or the
+   encrypted run will overflow no matter how good the plaintext accuracy looks.
+2. **Run it on the representative test data and compare to the reference.**
+   Report the delta the way Stage 3 requires: the end-to-end metric(s) against
+   the goal floor, the max absolute output error, and — where the workload
+   filters — the reject rate with its target-class composition.
+3. **Match the reference's decision rule exactly.** A subtle but common defect: a
+   binary classifier with a *single*-logit head decides by threshold
+   (`logit > 0`), not `argmax` over one output. The twin (and later the decrypt
+   step) must use the reference's actual rule, or fidelity will look broken when
+   the circuit is fine.
+4. **Present the comparison and gate on it.** The twin-vs-reference result is the
+   decision point between design and the expensive encrypted build:
+   - *Interactive runs:* **pause and get explicit user approval** before
+     proceeding to Stage 8. Show the metrics, the deltas, and any rejects.
+   - *Autonomous runs:* if the twin clears the goal floor, **proceed and record
+     the twin-vs-reference result as a logged assumption**; if it misses the
+     floor, stop and report rather than build an encrypted version of a design
+     that already fails in plaintext.
+
+A validated, decode-safe twin is the primary design deliverable. Stage 8 turns it
+into encrypted code.
+
+## Stage 8: Implement the FHE Program
+
+Only after the twin is validated and approved. Implement in **OpenFHE C++** —
+the single first-class path here: the models this skill runs on are
+OpenFHE-native (far more public OpenFHE than DSL code to learn from), so it is
+the most reliable target.
 
 **Build in the current working directory by default.** Generate the application
 in your current working directory unless the user explicitly directs otherwise.
@@ -761,52 +843,17 @@ Do not create files inside the niobium-client repository (e.g., under
 `dsl_fhe/examples/`) or modify its `Makefile`/build files **unless the user
 explicitly asks to do that**.
 
-- **Track A — the `nb` FHE DSL (preferred).** If the
-  [niobium-client](https://github.com/NiobiumInc/niobium-client) repository is
-  available (look for a `dsl_fhe/` directory), implement in the `nb`
-  domain-specific language. The DSL generates everything Track B builds by
-  hand — the four-program architecture, all serialization, CMake, key
-  generation matched to the operations used, and record/replay
-  instrumentation — from ~3 short `.niob` files. Trust boundaries from Stage 1
-  become compiler-enforced (`@client`/`@server`; server code referencing the
-  secret key is a compile error). This track is dramatically less error-prone
-  and keeps the whole application within one context window.
-  **Read `references/implementing-with-nb-dsl.md`** for the stage-by-stage
-  mapping from this skill's design outputs to DSL constructs, the workflow,
-  and current limitations.
+**Optional DSL path.** Niobium also ships an `nb` FHE DSL (in
+[niobium-client](https://github.com/NiobiumInc/niobium-client)'s `dsl_fhe/`) that
+generates the whole pipeline — the four-program split, serialization, CMake, key
+generation, record/replay — from ~3 short `.niob` files, with compiler-enforced
+`@client`/`@server` trust boundaries. It is CKKS-only and has far fewer public
+examples than OpenFHE, so treat it as an optional convenience, not the default.
+If you use it, **read `references/implementing-with-nb-dsl.md`** for the
+design-output → DSL mapping, workflow, and limitations. The rest of this stage
+describes the OpenFHE implementation the DSL would otherwise generate.
 
-- **Track B — raw OpenFHE C++.** Use when the DSL is unavailable, or when the
-  design needs features the DSL does not yet express: **BFV/BGV** (the DSL is
-  CKKS-only today), **transciphering** (Stage 5 output integrity),
-  **threshold/multi-party keys**, or **bootstrapping**. The rest of this
-  stage describes Track B; it is also the reference model for understanding
-  what Track A generates.
-
-### Build the faithful twin first (two-speed development)
-
-Before either track, write a **faithful twin**: a plaintext (e.g. numpy) model
-of the exact circuit — the *same* Chebyshev polynomials, the *same* fixed-point
-quantization step (Δ = 2^scaling), the *same* packing and rescale points the
-FHE version will run. This is not the Stage 3 reference (which is the *ideal*
-algorithm). The twin predicts encrypted behavior modulo random noise, so it is
-both the primary design artifact and a fast search proxy:
-
-- **It is the executable spec.** Every parameter the design turns — depth,
-  scaling modulus, Chebyshev degree/domain, packing — is a knob in the twin. A
-  decode-safe, accurate twin *is* the design; the OpenFHE build is a mechanical
-  downstream step that should reproduce it modulo noise.
-- **It makes iteration cheap.** A twin sweep runs in seconds; a full encrypted
-  build+run is minutes to hours. Use the twin to explore the parameter space and
-  reserve the encrypted run for confirmation — and gate the encrypted run on a
-  decode-safety check (the modulus-chain budget from Stage 6) so the twin stops
-  greenlighting circuits that will overflow.
-- **Match the reference's decision rule exactly.** A subtle but common defect:
-  a binary classifier with a *single*-logit head decides by threshold
-  (`logit > 0`), not `argmax` over one output. The twin and the decrypt step
-  must use the reference's actual rule, or fidelity will look broken when the
-  circuit is fine.
-
-### Track B: the four-program architecture (raw OpenFHE)
+### The four-program architecture
 
 Build the FHE version using OpenFHE as four separate executable programs.
 This structure enforces the trust boundaries from the protocol — each program
@@ -920,7 +967,7 @@ extra.
 
 **For a detailed walkthrough:** Read `references/building-your-first-fhe-application.md`
 
-## Stage 8: Specify the Protocol and Threat Model
+## Stage 9: Specify the Protocol and Threat Model
 
 As a final design step, document the full protocol and its security properties:
 
@@ -966,12 +1013,12 @@ self-contained and can be read independently.
 | `references/fhe-privacy-model.md` | Stage 1: establishing the privacy model (parties, adversaries, output privacy, differential privacy) |
 | `references/fhe-what-fhe-can-and-cannot-do.md` | Stage 2: assessing whether a workload is FHE-feasible |
 | `references/fhe-scheme-selection.md` | Stage 4: choosing between CKKS, BFV, and BGV |
-| `references/building-your-first-fhe-application.md` | Stages 3, 6, 7: the development checklist from plaintext through implementation |
-| `references/implementing-with-nb-dsl.md` | Stage 7 Track A: implementing the design in the `nb` FHE DSL (niobium-client) — stage-to-construct mapping, workflow, pitfalls, limitations |
-| `references/fhe-application-dialogue.md` | Stages 3–7: a worked example showing all steps for a real anomaly detection application |
-| `references/example-set-membership.md` | Stages 5–8: complete CKKS design spec and implementation (squared distance, iterated squaring, column-major packing, threat model) |
+| `references/building-your-first-fhe-application.md` | Stages 3, 6, 8: the development checklist from plaintext through implementation |
+| `references/implementing-with-nb-dsl.md` | Stage 8 (optional DSL path): implementing the design in the `nb` FHE DSL (niobium-client) — stage-to-construct mapping, workflow, pitfalls, limitations |
+| `references/fhe-application-dialogue.md` | Stages 3–8: a worked example showing all steps for a real anomaly detection application |
+| `references/example-set-membership.md` | Stages 5–9: complete CKKS design spec and implementation (squared distance, iterated squaring, column-major packing, threat model) |
 | `references/example-fetch-by-similarity.md` | Stage 5: advanced CKKS patterns (Chebyshev approximation, slot replication, running sums, output compression) |
-| `references/example-network-intrusion-detection.md` | Stages 3–7: ML inference under encryption (autoencoder ensemble, Chebyshev activations, feature-major packing, streaming batches) |
+| `references/example-network-intrusion-detection.md` | Stages 3–8: ML inference under encryption (autoencoder ensemble, Chebyshev activations, feature-major packing, streaming batches) |
 | `references/openfhe-examples-catalog.md` | All stages: catalog of specific OpenFHE examples mapped to design patterns |
 
 ## Key Principles

@@ -10,7 +10,7 @@ Copilot, Windsurf, and more.
 
 ### [`fhe-application-design`](skills/fhe-application-design/) — design FHE applications
 
-An 8-stage methodology for designing and building Fully Homomorphic Encryption (FHE)
+A 9-stage methodology for designing and building Fully Homomorphic Encryption (FHE)
 applications with the Niobium DSL and OpenFHE — from privacy model and feasibility through
 scheme selection, circuit design, parameter selection, implementation, and protocol
 specification. Use it whenever you need to compute on encrypted data, assess FHE

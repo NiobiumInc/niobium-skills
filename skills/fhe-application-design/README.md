@@ -1,10 +1,10 @@
 # FHE Application Design: an AI Agent Skill for FHE
 
-An AI Agent Skill that guides developers through designing and building Fully Homomorphic Encryption (FHE) applications with the Niobium DSL and OpenFHE. It provides an 8-stage methodology covering the full design process, from establishing a privacy model through implementation and protocol specification.
+An AI Agent Skill that guides developers through designing and building Fully Homomorphic Encryption (FHE) applications with OpenFHE (and an optional Niobium DSL path). It provides a 9-stage methodology covering the full design process, from establishing a privacy model through implementation and protocol specification.
 
 ## What This Skill Does
 
-When a user asks the agent to design an FHE application, this skill provides structured guidance through eight stages:
+When a user asks the agent to design an FHE application, this skill provides structured guidance through nine stages:
 
 1. **Privacy model** — identify parties, adversaries, encryption model (single vs. independent encryptors), output privacy, and output integrity (transciphering)
 2. **Feasibility assessment** — data-obliviousness, arithmetic lane, multiplicative depth, SIMD parallelism
@@ -12,8 +12,9 @@ When a user asks the agent to design an FHE application, this skill provides str
 4. **Scheme selection** — CKKS vs. BFV vs. BGV, with justification
 5. **Circuit design** — SIMD packing, comparison strategies, depth budget, transciphering layer
 6. **Parameter selection** — ring dimension, depth, scaling modulus, size/bandwidth estimation
-7. **Implementation** — two tracks: the `nb` FHE DSL (niobium-client; generates the whole pipeline from ~3 short files) or raw OpenFHE C++ (four-program architecture: keygen, encrypt, server, decrypt, plus test runner)
-8. **Protocol specification** — message flow, threat model, information leakage, integrity guarantees
+7. **Build and validate the faithful twin** — complete the FHE-shaped plaintext twin at the chosen parameters, run it on the test data, compare to the reference, and gate on the result (approval in interactive runs; proceed + record in autonomous runs)
+8. **Implement the FHE program** — OpenFHE C++ four-program architecture (keygen, encrypt, server, decrypt, plus a test runner) and a separate-process demo; an optional `nb` DSL path exists
+9. **Protocol specification** — message flow, threat model, information leakage, integrity guarantees
 
 The skill ensures that common protocol-level errors are caught early: packing data across privacy boundaries, ignoring output integrity when the decryptor differs from the consumer, conflating SIMD parallelism with task-level concurrency, and over-provisioning ciphertext depth.
 

@@ -1,6 +1,6 @@
 # Implementing the Design in the `nb` FHE DSL
 
-This reference covers Stage 7 **Track A**: turning the design produced by
+This reference covers **Stage 8 (the optional DSL path)**: turning the design produced by
 Stages 1–6 into a working application using the `nb` domain-specific language
 and its `nbc` cross-compiler, which live in the
 [niobium-client](https://github.com/NiobiumInc/niobium-client) repository under
@@ -28,7 +28,7 @@ to transcribe the design:
 | Parties and trust boundaries (1) | `@client` / `@server` function annotations — compiled to separate binaries; server code referencing `SecretKey` or calling `decrypt()` is a **compile error** |
 | What crosses the wire (1, 8) | `wire` type declarations — the compiler generates all serialization; a stage's `reads(...)`/`writes(...)` clauses are a machine-checked message-flow spec |
 | Who encrypts / packing legality (1, 5) | Expressed in *which stage does the encrypting*, and **compiler-checked**: annotate independent-encryptor stages `@encryptors(independent)` and `encrypt()` of a column slice spanning records is a compile error (cross-owner SIMD packing). Single encryptor (default) → one `@client` stage packs records across slots, column-major |
-| Scheme selection (4) | `scheme CKKS { ... }` block. **The DSL is CKKS-only today** — a BFV/BGV design must use Track B |
+| Scheme selection (4) | `scheme CKKS { ... }` block. **The DSL is CKKS-only today** — a BFV/BGV design must use raw OpenFHE |
 | Depth budget (5, 6) | `depth:` in the scheme block; per-instance via `scheme.override(depth: inst.depth)`. The compiler **errors** when the statically tracked multiplication chain exceeds the budget (a sound lower bound) and warns on heavy over-provisioning. `chebyshev` with a literal/const `degree:` is a **modeled subcircuit**: it charges `ceil(log2(degree+1)) + 1` levels into the tracker (59 → 7, 119 → 8, …); non-literal degrees stay depth-opaque |
 | Security ↔ parameters frontier (6) | Compile-time advisor: `nbc check` emits a `note:` computing `logQ ≈ first_mod + depth × q_i` and the minimum ring dimension for the declared security level (HE-standard tables), flagging declared `ring_dim`s below target (warning if no `scheme.override(security:)` dev profile covers them). Use it to trade q_i / depth / approximation degree against N |
 | Ring dimension / slots (6) | `ring_dim` field on the `Instance` struct (applied automatically); `n_slots = ring_dim / 2` for CKKS |
@@ -141,7 +141,7 @@ implementations — read the design reference and the DSL code side by side:
    delete the recorded program directory (`*_workload_*`,
    `fhetch_driver_source_*`) to force a fresh record.
 
-## What still requires Track B (raw OpenFHE)
+## What still requires raw OpenFHE
 
 - **BFV / BGV** — the codegen targets CKKS only.
 - **Transciphering** (Stage 5 output-integrity dual output) — no DSL
