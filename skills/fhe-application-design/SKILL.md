@@ -864,6 +864,41 @@ Also produce a fifth program:
    cycle, run_test makes it fast to validate changes without manually
    invoking each stage.
 
+**Demonstrate the architecture as separate processes (gating item).** The
+four-program split makes the trust boundary concrete in code; a
+deployment-shaped demo must make it concrete in process and network topology.
+Before considering an application done, stand the client and server up as
+separate OS processes that communicate only over HTTP/sockets, exchanging
+serialized ciphertext — never keys or plaintext. A single process that plays
+both roles only illustrates the protocol; it cannot demonstrate the security
+property, because nothing prevents that process from touching the secret key.
+Requirements for the demo:
+
+- **Two processes, two homes.** Provision two directories (standing in for two
+  hosts): a client home holding the context, public key, secret key, and the
+  private inputs; and a server home holding the context, public key, evaluation
+  keys (relin/rotation), and the model. The server home contains no secret key
+  and no client inputs.
+- **The secret key never crosses the wire.** The client generates all keys and
+  ships only the context + public + evaluation keys to the server. Only
+  ciphertext (and, at setup, public/eval keys) travels between processes.
+- **Enforce the boundary, don't just assert it.** The server process should
+  refuse to start if a secret-key file is present in its home, and the
+  provisioning step should assert that the secret key and private inputs are
+  absent from the server home. These checks turn a claim into a guarantee a
+  reviewer can test (e.g. copy the secret key into the server home and confirm
+  the server aborts).
+- **Show the boundary in the transcript.** The server should log only byte
+  counts ("received N bytes of ciphertext", "returned M bytes, still
+  encrypted"), making it visible that it never sees plaintext.
+- **Remote-host ready.** The server home must be safe to copy to an untrusted
+  machine as-is; point the client at it via a configurable server URL.
+
+This is inexpensive — a few dozen lines of glue around the four binaries — and
+it is the artifact that most convincingly communicates the shape of an FHE
+solution to stakeholders. Treat it as part of the deliverable, not an optional
+extra.
+
 **Testing and debugging:**
 
 1. **Run and compare.** Use run_test to execute the full pipeline and review
@@ -889,7 +924,14 @@ Also produce a fifth program:
 
 As a final design step, document the full protocol and its security properties:
 
-1. The client-server message flow (what is sent, in what order).
+1. The client-server message flow (what is sent, in what order). Document the
+   flow as it runs across the two processes — the setup transfer (client →
+   server: context, public key, evaluation keys, once) and the per-request
+   transfer (client → server: query ciphertext; server → client: result
+   ciphertext). State explicitly which files live only on the client host
+   (secret key, private inputs) and which live on the server host (model,
+   evaluation keys), and note that the server host is provisioned without the
+   secret key so it can be placed on untrusted infrastructure.
 2. What each party can and cannot learn, and under what assumptions.
 3. Intentional information leakage (the protocol output).
 4. Incidental leakage (dataset size from batch count, timing, raw scores).
