@@ -124,6 +124,52 @@ who decrypts, whether FHE alone is sufficient or needs to be combined with
 other techniques, and whether the protocol needs output integrity protection
 (transciphering or another mechanism).
 
+### Derive the clear/encrypted decomposition (don't guess it)
+
+Most real applications are NOT whole-program FHE. They are a pipeline with a
+trust boundary, and where each stage runs should be *derived* from three lenses,
+not chosen by feel:
+
+- **Dataflow** — what each stage reads and writes (so you know what actually
+  has to cross the boundary).
+- **Privacy** — which values are sensitive (must be hidden from the server) vs.
+  public.
+- **Feasibility** — which operations are FHE-friendly vs. FHE-hostile (hashing,
+  sorting, argmax/top-k, data-dependent branching are hostile).
+
+There are exactly three placements for a stage:
+
+| placement | runs on | sees plaintext? | legal for |
+|---|---|---|---|
+| `client_clear` | client | yes (its own) | anything the client holds in plaintext |
+| `server_clear` | server | yes | **public data only** (offload without FHE cost) |
+| `server_encrypted` | server | no (under CKKS) | FHE-feasible computations |
+
+**The invariant — privacy dominates feasibility.** A sensitive value may *never*
+run in `server_clear` (that is a leak), no matter how FHE-hostile it is.
+Feasibility only bounds `server_encrypted`; `client_clear` is legal only for data
+the client already holds in plaintext. Put positively: minimize the encrypted
+core — a stage belongs in `server_encrypted` only when it is sensitive **and**
+must run server-side **and** is FHE-feasible. If it can run on the client's own
+data (even if FHE-hostile), put it in `client_clear` (this is why a phonetic hash
+or a top-k ranking runs client-side); if it is public, put it in `server_clear`
+(e.g. a recommender's item catalog is a plaintext operand, so scoring becomes a
+cheap ciphertext×plaintext multiply). Model weights / a public catalog are
+plaintext *operands* the encrypted core reads — not a separate stage.
+
+**The dead end.** If a stage is sensitive **and** FHE-infeasible **and** not
+runnable on the client (it needs a foreign secret — e.g. a sensitive-on-sensitive
+join with data-dependent control flow), there is *no* legal placement. Do not
+demote it to `server_clear` to make it "work" — that leaks. Stop and redesign:
+reformulate the hostile step into an FHE-friendly representation (Stage 3/5),
+relax a specific privacy label only with the owner's explicit consent, or
+restructure so the client can precompute it.
+
+**When the privacy model is ambiguous**, assume the standard FHE model — the
+client's input is sensitive and the server computes on it without seeing it (so
+there *is* an encrypted core) — and state that assumption, rather than concluding
+"no FHE needed." Only mark data non-sensitive when it is clearly public.
+
 **For detailed guidance:** Read `references/fhe-privacy-model.md`
 
 ## Stage 2: Assess FHE Feasibility
@@ -222,6 +268,29 @@ structure already in place:
 
 ### Activation-range feasibility check (and when to recommend changing the model)
 
+**This is a pre-design precondition, not a mid-design check — run it as a gate
+and stop if it fails.** For the ML-inference template the decisive entry
+condition is that the *reference model keeps every layer's pre-activations in a
+compact band* on the representative data (roughly within ±8 — the widest a
+low-degree Chebyshev fits and still decodes inside the no-bootstrapping depth
+budget). Confirm this BEFORE authoring anything: it is cheap (one forward pass
+of the plaintext reference) and it is the difference between "fill in the
+template" and days of degree/domain/depth/filter thrashing. Grade it:
+
+- **bulk within band, no tail** → easy: low degree, no filter.
+- **bulk within band, thin benign tail** → workable: tight domain + a pre-flight
+  filter (the composition guard must confirm the rejected set is not enriched
+  for the target class).
+- **bulk exceeds the band** → *not feasible as-is*. Do not proceed to design and
+  do not try to rescue it with a higher degree (that overruns the depth budget
+  and overflows decode). Hand back a model-side recommendation — weight decay /
+  BatchNorm at train time, clipped activations, input normalization — which
+  returns as a *new* reference that re-enters this gate.
+
+The agent enforces this deterministically (it will refuse to design an
+out-of-band model rather than rely on judgment to stop). The rest of this
+section is the mechanism behind the grades.
+
 A Chebyshev (or Taylor) approximation is only valid *inside* its fit interval;
 outside that interval it does not merely lose accuracy, it diverges — by many
 orders of magnitude for a steep function like sigmoid. So before locking in the
@@ -303,6 +372,19 @@ When a tight domain is accurate but a few records escape it, the right move is t
 **reject those records**, not to distort the approximation for everyone. Make it
 a bounded, measured decision:
 
+- **Where the filter runs — client input-prep, NOT the FHE program.** The
+  rejection happens *before* encryption, as part of the client's input
+  preparation: the client reads `feature_bounds.csv`, drops out-of-domain
+  records, and only then encodes/encrypts the admitted batch. Do **not**
+  implement the bounds check inside the `.niob` program. An out-of-domain record
+  isn't a "slightly wrong" answer — the polynomial diverges on it and (in a
+  batched pack) overflows the shared scale so the *entire* batch fails to
+  `Decode`; the float reference twin can't see this (no scale), so it must be
+  prevented at the input, not patched in-circuit. Authoring the check into the
+  `.niob` also forces fragile column-major compaction and wire-serialization
+  workarounds for no benefit. Keep the `.niob` a plain forward pass over the
+  admitted batch; let the client wrapper enforce the box.
+
 - **What you filter against (and why it's a proxy).** The true constraint is the
   activation's domain on its **pre-activations** (`W·x + b`), but the client
   can't evaluate that — the *weights are the server's*. So the runtime check is a
@@ -313,6 +395,14 @@ a bounded, measured decision:
   pre-activations inside the domain on the representative set. The design emits
   the CSV (input ranges only — **no weights**, so it's trust-model-safe); the
   client enforces it pre-flight.
+
+- **Where the box lives (fixed path — do not improvise).** The harness stages
+  `feature_bounds.csv` into the run's **`io/`** directory, alongside
+  `input.bin`, and the `@client` stage runs with its working directory at the
+  build root. Read the box from exactly **`io/feature_bounds.csv`** — the same
+  fixed I/O contract as the input data. Do **not** invent another location
+  (e.g. `model/`): a path the harness doesn't stage to makes the stage crash
+  with `Cannot open .../feature_bounds.csv` and the whole candidate fails.
 
 - **The two thresholds.** Search `(domain, degree)` for a point satisfying **both**
   `reject_rate ≤ R_max` (default **1%**) **and** `polynomial_accuracy ≥ A_min`
@@ -369,6 +459,18 @@ results, use BFV.
 This is the core of the FHE application design — translating the plaintext
 algorithm into an arithmetic circuit that operates on encrypted data. Key
 decisions at this stage:
+
+**Choose the boundary representation first.** Before packing or authoring the
+core, fix the *representation* of the data that crosses the trust boundary — it
+is where most of the design cleverness lives, and it sets packing and depth for
+everything downstream. Often a client-side cleartext transform (Stage 1's
+`client_clear` pre-stage) can reshape an FHE-hostile problem into an FHE-friendly
+one: a phonetic hash turns fuzzy name matching into an exact match over short
+codes (set-membership); L2-normalizing embeddings turns cosine similarity into a
+plain inner product (fetch-by-similarity); folding public model weights into a
+plaintext operand turns scoring into a depth-1 ciphertext×plaintext multiply.
+Pick that encoding first and write both halves against it — don't pack, then
+discover the representation was wrong.
 
 **SIMD data layout.** How to pack data into ciphertext slots to maximize
 parallelism. The packing strategy must be consistent with the privacy model
@@ -490,9 +592,19 @@ The key parameters for CKKS (and analogous choices for BFV/BGV):
 
 - **Ring dimension (N).** Determines the number of SIMD slots (N/2 for CKKS,
   N for BFV/BGV) and the achievable security level for a given modulus size.
-  Typical choices are 2^15 (32,768) or 2^16 (65,536). Larger N means more
-  slots and support for deeper circuits, but larger ciphertexts and slower
-  operations.
+  **The backend floor is 2^16 (65,536); 2^15 is not supported.** N must also
+  be large enough that the total modulus `logQ` is secure at the target level:
+  compute `logQ ≈ first_mod + depth × scaling_mod` (plus the hybrid
+  key-switching special modulus, which adds materially), then pick the
+  smallest secure N. For the ML workloads here — depth ~12, scaling ~45,
+  first_mod ~55 → logQ ≈ 600 — **128-bit security requires N = 2^16**. Do
+  **not** author 2^15: it both undershoots the backend floor and fails
+  security for any non-trivial logQ. Pick N = 2^16 (n_slots = 32,768) for the
+  secure profile from the start. **Set it as a literal `ring_dim: 65536` in the
+  `scheme` block** — that is the field codegen honors. Do *not* rely on carrying
+  `ring_dim` only on the `Instance` struct: when the scheme block omits it,
+  codegen falls back to `n_slots` (= N/2 = 32,768), silently dropping below the
+  floor and failing key generation at build time.
 
 - **Multiplicative depth.** Set to match your circuit's depth budget from
   Stage 5. This is the most important parameter — it drives the modulus chain
@@ -507,9 +619,12 @@ The key parameters for CKKS (and analogous choices for BFV/BGV):
   Typically 50–60 bits. Provides headroom for the initial encryption.
 
 - **Security level.** Target HEStd_128_classic (128-bit classical security)
-  unless you have a specific reason for a different level. OpenFHE enforces
-  this — if your parameters don't achieve the target security, it will
-  automatically promote the ring dimension.
+  unless you have a specific reason for a different level. **Do not assume the
+  backend auto-promotes the ring** to meet security — it does not; a ring too
+  small for the declared security + logQ is a hard **key-generation error**
+  ("ring dimension N does not comply with HE standards"), which wastes a whole
+  build. Size N correctly up front (see Ring dimension above): for these ML
+  workloads that means N = 2^16.
 
 - **Scaling technique.** Use FLEXIBLEAUTO in OpenFHE for automatic rescaling
   in CKKS. This inserts rescale operations as needed to keep ciphertext
@@ -518,6 +633,49 @@ The key parameters for CKKS (and analogous choices for BFV/BGV):
 - **Rotation keys.** Generate keys for every rotation amount your circuit
   uses (powers of 2 for rotate-and-sum, specific offsets for data
   rearrangement). Missing rotation keys cause runtime errors.
+
+**Decode safety is a modulus-chain budget, not operand magnitude.** A CKKS
+circuit fails to decode ("approximation error too high") when the live modulus
+left *after* the circuit consumes its multiplicative levels no longer exceeds
+the scaled message plus a noise margin — not because intermediate values are
+"large." Two failure modes look identical at the `Decode` call but need
+opposite fixes:
+
+- **Per-operation precision erosion** — operands are well inside the activation
+  domain, but the per-level precision (scaling modulus) is too coarse, so noise
+  overruns the scale. Fix: **raise the scaling modulus** `q_i` (more bits per
+  level). Depth does *not* help — more levels don't lift the per-operation noise
+  floor (the long-standing "don't add depth for precision" rule).
+- **Noise-budget exhaustion** — the cleartext twin is *accurate* (operands
+  in-domain, the polynomial is a good fit) yet the encrypted run still overflows
+  `Decode`. The modulus chain ran short, not the precision. Fix: **raise the
+  multiplicative depth** — more RNS limbs means a larger total modulus and more
+  budget — *before* coarsening the polynomial by dropping the approximation
+  degree. Degree drop is the last resort: it sheds the very accuracy you are
+  trying to keep.
+
+  *Calibration anchor:* a degree-7 sigmoid over a tight domain (≈[-7, 7]) on the
+  fraud MLP decodes cleanly at **depth 15 / scaling 59 / first_mod 60 / N = 2^16**
+  but **overflows at depth 12 / scaling 45** *at the same operand magnitude* —
+  the discriminator is the chain budget, not the values.
+
+**Predict decode failure from the cleartext side — don't spend an encrypted run
+to discover it.** The float reference twin can't see the CKKS scale, but you can
+model the budget it implies. Estimate the levels the circuit consumes — roughly
+one Chebyshev eval per hidden activation at `ceil(log2(degree+1)) + 1` levels
+each, plus one rescale per linear (cipher × plaintext) layer under FLEXIBLEAUTO,
+plus a small margin — then require
+
+```
+first_mod + (depth − levels) × scaling  >  scaling + log2(worst_operand) + noise_margin
+```
+
+(a ~10-bit noise margin is a safe default). If the left side is underwater, the
+circuit will overflow `Decode`; raise depth (or scaling) before running
+encryption. This turns the two-speed loop's fast cleartext pass into a decode
+gate, so the expensive encrypted run is reserved for designs already predicted
+safe. Erring conservative is cheap: a falsely-"unsafe" verdict only adds depth,
+which is the correct move anyway.
 
 **Size estimation.** After choosing parameters, estimate the physical sizes
 of ciphertexts and keys. These determine client memory requirements and
@@ -620,6 +778,30 @@ explicitly asks to do that**.
   **threshold/multi-party keys**, or **bootstrapping**. The rest of this
   stage describes Track B; it is also the reference model for understanding
   what Track A generates.
+
+### Build the faithful twin first (two-speed development)
+
+Before either track, write a **faithful twin**: a plaintext (e.g. numpy) model
+of the exact circuit — the *same* Chebyshev polynomials, the *same* fixed-point
+quantization step (Δ = 2^scaling), the *same* packing and rescale points the
+FHE version will run. This is not the Stage 3 reference (which is the *ideal*
+algorithm). The twin predicts encrypted behavior modulo random noise, so it is
+both the primary design artifact and a fast search proxy:
+
+- **It is the executable spec.** Every parameter the design turns — depth,
+  scaling modulus, Chebyshev degree/domain, packing — is a knob in the twin. A
+  decode-safe, accurate twin *is* the design; the OpenFHE build is a mechanical
+  downstream step that should reproduce it modulo noise.
+- **It makes iteration cheap.** A twin sweep runs in seconds; a full encrypted
+  build+run is minutes to hours. Use the twin to explore the parameter space and
+  reserve the encrypted run for confirmation — and gate the encrypted run on a
+  decode-safety check (the modulus-chain budget from Stage 6) so the twin stops
+  greenlighting circuits that will overflow.
+- **Match the reference's decision rule exactly.** A subtle but common defect:
+  a binary classifier with a *single*-logit head decides by threshold
+  (`logit > 0`), not `argmax` over one output. The twin and the decrypt step
+  must use the reference's actual rule, or fidelity will look broken when the
+  circuit is fine.
 
 ### Track B: the four-program architecture (raw OpenFHE)
 
@@ -754,9 +936,26 @@ Throughout the design process, keep these principles in mind:
 - **Privacy model first.** Never jump to circuit design without establishing
   who holds what, who the adversaries are, and what the output reveals.
 
+- **Privacy dominates feasibility.** When deciding where each stage runs
+  (client-clear / server-clear / server-encrypted), a sensitive value may never
+  be placed in the clear on the server just because encrypting it is expensive
+  or FHE-infeasible — that is a leak, not an optimization. A stage that is
+  sensitive, FHE-infeasible, and not derivable from data the client already
+  holds is a genuine dead end: block and report it, don't leak. Minimize the
+  encrypted core, but never by relaxing privacy. When the repo is presented as
+  an FHE problem but the privacy model is ambiguous, assume the standard model
+  (the server computes on the client's encrypted input) and surface the
+  assumption, rather than concluding no encryption is needed.
+
 - **Plaintext correctness is ground truth.** Get the algorithm working
   correctly in the clear before introducing encryption. Every subsequent
   version is tested against this reference.
+
+- **The faithful twin is the executable spec.** Distinct from the ideal
+  plaintext reference: the twin runs the exact circuit (same polynomials,
+  quantization, packing) so it predicts encrypted behavior modulo noise. It is
+  the primary design artifact and the fast proxy that lets you search parameters
+  in seconds and reserve the expensive encrypted build for confirmation.
 
 - **Depth is the critical resource.** Multiplicative depth drives parameter
   sizes, which drive memory and performance. Every design decision should
