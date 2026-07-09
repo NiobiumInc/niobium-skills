@@ -1,0 +1,86 @@
+name: Publish FHE-dev image
+
+# Builds the FHE-dev build-and-run environment (skills/fhe-application-design/
+# environment/Dockerfile) and pushes it to GitHub Container Registry so users
+# can `docker pull ghcr.io/<owner>/fhe-dev` instead of building OpenFHE from
+# source. The image is smoke-tested before it is pushed, so a broken build never
+# reaches users.
+#
+# Fires on an image version tag (fhe-dev-v*), or manually via the Actions tab.
+# The `fhe-dev-` prefix keeps image releases separate from skill releases.
+on:
+  push:
+    tags: ["fhe-dev-v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image version, e.g. v0.1.0"
+        required: true
+
+concurrency:
+  group: publish-fhe-dev-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write          # lets GITHUB_TOKEN push to the org's GHCR
+
+jobs:
+  build-test-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240    # OpenFHE compiles from source (~1 hr) + torch layer
+    steps:
+      # GitHub-hosted runners ship ~14 GB free on /, which the OpenFHE build +
+      # the torch layer can exhaust. Reclaim the big preinstalled toolchains.
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
+                      "$AGENT_TOOLSDIRECTORY" || true
+          sudo docker image prune -af || true
+          df -h /
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image ref
+        id: ref
+        run: |
+          owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          version="${{ github.event.inputs.tag || github.ref_name }}"
+          version="${version#fhe-dev-}"          # fhe-dev-v0.1.0 -> v0.1.0
+          echo "image=ghcr.io/$owner/fhe-dev" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Build and LOAD into the local docker (no push yet) so we can smoke-test.
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: skills/fhe-application-design/environment
+          file: skills/fhe-application-design/environment/Dockerfile
+          load: true
+          push: false
+          tags: ${{ steps.ref.outputs.image }}:${{ steps.ref.outputs.version }}
+
+      # Gate the push: the image must build+run OpenFHE and numpy.
+      - name: Smoke test
+        run: |
+          docker run --rm \
+            "${{ steps.ref.outputs.image }}:${{ steps.ref.outputs.version }}" \
+            fhe-smoke-test
+
+      - name: Tag :latest and push
+        run: |
+          img="${{ steps.ref.outputs.image }}"
+          ver="${{ steps.ref.outputs.version }}"
+          docker tag "$img:$ver" "$img:latest"
+          docker push "$img:$ver"
+          docker push "$img:latest"
+          echo "pushed $img:$ver and $img:latest"

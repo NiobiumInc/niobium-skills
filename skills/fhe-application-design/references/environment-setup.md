@@ -132,11 +132,19 @@ docker run --rm -v "$PWD":/work ghcr.io/niobiuminc/fhe-dev:latest \
 The image is defined in [`../environment/Dockerfile`](../environment/Dockerfile)
 with [`../environment/smoke_test.sh`](../environment/smoke_test.sh).
 
+Build it manually:
+
 ```bash
 cd skills/fhe-application-design/environment
 docker build -t ghcr.io/niobiuminc/fhe-dev:latest .
 docker run --rm ghcr.io/niobiuminc/fhe-dev:latest fhe-smoke-test   # validate
 docker push ghcr.io/niobiuminc/fhe-dev:latest
 ```
+
+Or publish via CI: push an image tag (`git tag fhe-dev-v0.1.0 && git push origin
+fhe-dev-v0.1.0`) to trigger `.github/workflows/publish-fhe-dev-image.yml`, which
+builds, **runs the smoke test, and only then pushes** `:<version>` and `:latest`
+to GHCR. Make the GHCR package public once (Packages → fhe-dev → Package
+settings → Change visibility) so users can pull without authenticating.
 
 Pin `OPENFHE_VERSION` (build arg) to the OpenFHE release the skill targets.
