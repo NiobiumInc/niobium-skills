@@ -54,6 +54,44 @@ whole methodology is the disciplined path from the first to the third:
    decode-safe and matches the reference, this step should reproduce it modulo
    encryption noise.
 
+## Stage 0: Prepare the Build-and-Run Environment
+
+Before any design work, make sure there is a place where both the twin and the
+FHE program can actually be built and run. Do this **once, up front** — a broken
+toolchain discovered three stages into a design is the most avoidable kind of
+frustration. Treat it as a gate: do not start Stage 1 until the smoke test
+passes.
+
+The setup is deliberately small because the work runs at two speeds:
+
+- **The twin tier (Stages 1–7) needs nothing installed.** The design, the
+  parameter sweep, and the twin-vs-reference validation are pure Python (numpy)
+  and run in Claude's own environment as you converse.
+- **The FHE tier (Stage 8) needs the container.** Building and running the
+  encrypted OpenFHE app is too heavy for that sandbox, so it happens in a
+  prebuilt **FHE-dev** image on the user's machine. You **pull** this image —
+  you never build OpenFHE from source.
+
+Three one-time steps:
+
+1. Install Docker (Docker Desktop on macOS/Windows) if it isn't already present
+   — the only unavoidable local install, and far easier than building OpenFHE.
+2. Pull the image: `docker pull ghcr.io/niobiuminc/fhe-dev:latest`.
+3. Run the smoke test:
+   `docker run --rm ghcr.io/niobiuminc/fhe-dev:latest fhe-smoke-test`. It builds
+   and runs a trivial OpenFHE program and a numpy stub; a final `SMOKE OK` means
+   the environment is ready.
+
+At Stage 8 the container is invoked with the project folder bind-mounted
+(`-v "$PWD":/work`), so it compiles the source Claude wrote and writes results
+back into the same folder. In Cowork, Claude authors each `docker run` command
+and the user runs it; in Claude Code, Claude runs it directly. Either way the
+container is a plain build box — Claude, not the container, is doing the design.
+
+**For detailed guidance:** Read `references/environment-setup.md` (prerequisites,
+the mounted-folder data bus, the Cowork vs. Claude Code loop, torch references,
+and troubleshooting).
+
 ## Stage 1: Establish the Privacy Model
 
 Before thinking about circuits, parameters, or code, work with the user to
@@ -1010,6 +1048,7 @@ self-contained and can be read independently.
 
 | Reference file | When to read it |
 |---|---|
+| `references/environment-setup.md` | Stage 0: preparing the build-and-run environment (Docker, the FHE-dev image, the smoke test, the mounted-folder data bus) |
 | `references/fhe-privacy-model.md` | Stage 1: establishing the privacy model (parties, adversaries, output privacy, differential privacy) |
 | `references/fhe-what-fhe-can-and-cannot-do.md` | Stage 2: assessing whether a workload is FHE-feasible |
 | `references/fhe-scheme-selection.md` | Stage 4: choosing between CKKS, BFV, and BGV |

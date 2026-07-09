@@ -4,8 +4,9 @@ An AI Agent Skill that guides developers through designing and building Fully Ho
 
 ## What This Skill Does
 
-When a user asks the agent to design an FHE application, this skill provides structured guidance through nine stages:
+When a user asks the agent to design an FHE application, this skill provides structured guidance through nine stages, preceded by a one-time environment setup:
 
+0. **Prepare the environment** — install Docker and pull the prebuilt FHE-dev image (OpenFHE + toolchain + Python ML stack); run a smoke test so the twin and the FHE program can both be built and run before design starts
 1. **Privacy model** — identify parties, adversaries, encryption model (single vs. independent encryptors), output privacy, and output integrity (transciphering)
 2. **Feasibility assessment** — data-obliviousness, arithmetic lane, multiplicative depth, SIMD parallelism
 3. **Plaintext algorithm** — get it working unencrypted first, with client-server separation
