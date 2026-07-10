@@ -24,8 +24,12 @@ int main() {
     cc->Enable(PKE);
     cc->Enable(LEVELEDSHE);
     auto keys = cc->KeyGen();
-    auto a = cc->MakeCKKSPackedPlaintext({1.0, 2.0, 3.0});
-    auto b = cc->MakeCKKSPackedPlaintext({4.0, 5.0, 6.0});
+    // Explicit vector<double> — a bare {..} is ambiguous between the double and
+    // complex<double> MakeCKKSPackedPlaintext overloads.
+    std::vector<double> va{1.0, 2.0, 3.0};
+    std::vector<double> vb{4.0, 5.0, 6.0};
+    auto a = cc->MakeCKKSPackedPlaintext(va);
+    auto b = cc->MakeCKKSPackedPlaintext(vb);
     auto ca = cc->Encrypt(keys.publicKey, a);
     auto cb = cc->Encrypt(keys.publicKey, b);
     auto cs = cc->EvalAdd(ca, cb);
@@ -42,12 +46,18 @@ cmake_minimum_required(VERSION 3.16)
 project(fhe_smoke CXX)
 set(CMAKE_CXX_STANDARD 20)
 find_package(OpenFHE REQUIRED)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenFHE_CXX_FLAGS}")
 add_executable(smoke smoke.cpp)
+# OpenFHE splits its headers across core/, pke/, and binfhe/ (base-fhe.h pulls in
+# binfhecontext.h), plus its bundled third-party headers. Include them all.
 target_include_directories(smoke PRIVATE
     ${OpenFHE_INCLUDE}
+    ${OpenFHE_INCLUDE}/third-party/include
     ${OpenFHE_INCLUDE}/core
-    ${OpenFHE_INCLUDE}/pke)
-target_link_libraries(smoke PRIVATE OPENFHEcore OPENFHEpke)
+    ${OpenFHE_INCLUDE}/pke
+    ${OpenFHE_INCLUDE}/binfhe)
+# Link via OpenFHE's own variable rather than naming targets (robust across releases).
+target_link_libraries(smoke PRIVATE ${OpenFHE_SHARED_LIBRARIES})
 CM
 
 echo "[1/2] building + running a trivial OpenFHE CKKS program..."
