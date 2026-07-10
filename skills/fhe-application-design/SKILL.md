@@ -921,8 +921,28 @@ can be deployed independently:
    decodes the results. Compares against the plaintext reference
    implementation from Stage 3 to validate correctness.
 
-Use CMake with find_package(OpenFHE) for all four programs. Link against
-OpenFHE's shared or static libraries. Enable PKE, KEYSWITCH, and LEVELEDSHE
+Use CMake with `find_package(OpenFHE)` for all four programs. **Use this exact
+include/link block — OpenFHE splits its headers across `core/`, `pke/`, and
+`binfhe/`, and `pke` transitively includes `binfhecontext.h` from `binfhe/`, so
+omitting any of them fails with `fatal error: binfhecontext.h: No such file or
+directory`:**
+
+```cmake
+find_package(OpenFHE REQUIRED)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenFHE_CXX_FLAGS}")
+
+add_executable(server server.cpp)      # likewise keygen / encrypt / decrypt
+target_include_directories(server PRIVATE
+    ${OpenFHE_INCLUDE}
+    ${OpenFHE_INCLUDE}/third-party/include
+    ${OpenFHE_INCLUDE}/core
+    ${OpenFHE_INCLUDE}/pke
+    ${OpenFHE_INCLUDE}/binfhe)
+target_link_libraries(server PRIVATE ${OpenFHE_SHARED_LIBRARIES})
+```
+
+Link via `${OpenFHE_SHARED_LIBRARIES}` rather than naming targets by hand
+(robust across OpenFHE releases). Enable PKE, KEYSWITCH, and LEVELEDSHE
 features on the crypto context. Enable ADVANCEDSHE if using Chebyshev
 evaluation or advanced rotation patterns. Use OpenFHE's serialization API
 (Serial::SerializeToFile / Serial::DeserializeFromFile) for all inter-program
