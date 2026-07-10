@@ -969,6 +969,18 @@ Also produce a fifth program:
    cycle, run_test makes it fast to validate changes without manually
    invoking each stage.
 
+   **Stage into two homes, even locally — do not use a single shared
+   directory.** The server refuses to start if a secret key is present in its
+   home (see the demo below), so `run_test` must reproduce the deployment
+   topology on disk: keygen writes the **secret key only into a client home**;
+   `run_test` then provisions a **server home** containing just the context,
+   public key, evaluation keys, the model, and the input ciphertexts — never the
+   secret key or plaintext — and launches the server there; decrypt runs back in
+   the client home. A single shared directory puts the secret key in the
+   server's home and trips its own guard. This is the #1 local-run mistake: the
+   convenience of one folder silently violates the trust boundary the four
+   programs exist to enforce.
+
 **Demonstrate the architecture as separate processes (gating item).** The
 four-program split makes the trust boundary concrete in code; a
 deployment-shaped demo must make it concrete in process and network topology.
