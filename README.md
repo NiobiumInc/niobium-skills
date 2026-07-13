@@ -10,9 +10,10 @@ Copilot, Windsurf, and more.
 
 ### [`fhe-application-design`](skills/fhe-application-design/) — design FHE applications
 
-A 9-stage methodology for designing and building Fully Homomorphic Encryption (FHE)
-applications with the Niobium DSL and OpenFHE — from privacy model and feasibility through
-scheme selection, circuit design, parameter selection, implementation, and protocol
+A ten-stage methodology (Stages 0–9) for designing and building Fully Homomorphic
+Encryption (FHE) applications with OpenFHE (optional Niobium DSL path) — from build
+environment and privacy model through feasibility, scheme selection, circuit design,
+parameter selection, the faithful twin, encrypted implementation, and protocol
 specification. Use it whenever you need to compute on encrypted data, assess FHE
 feasibility, or structure a client–server protocol for encrypted computation.
 
@@ -20,11 +21,25 @@ feasibility, or structure a client–server protocol for encrypted computation.
 npx skills add NiobiumInc/niobium-skills --skill fhe-application-design
 ```
 
+**Prerequisites (beyond the skill itself):** building and running the encrypted
+application (Stage 8) happens in the prebuilt **FHE-dev container** — you never build
+OpenFHE from source. You need [Docker](https://www.docker.com/products/docker-desktop/)
+and a one-time pull of the image (several GB):
+
+```bash
+docker pull ghcr.io/niobiuminc/fhe-dev:v0.5.0
+docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.5.0 fhe-smoke-test   # ends with SMOKE OK
+```
+
+The skill walks you through this as its Stage 0, so you can also just start a
+conversation and let the agent set it up with you. The design stages (1–7) need nothing
+installed at all.
+
 See the [skill's README](skills/fhe-application-design/) for full documentation.
 
 | Skill | What it does | Install |
 | --- | --- | --- |
-| [`fhe-application-design`](skills/fhe-application-design/) | Design & build FHE applications (Niobium DSL / OpenFHE) | `npx skills add NiobiumInc/niobium-skills --skill fhe-application-design` |
+| [`fhe-application-design`](skills/fhe-application-design/) | Design & build FHE applications (OpenFHE / optional Niobium DSL) | `npx skills add NiobiumInc/niobium-skills --skill fhe-application-design` |
 
 ## Installation
 
