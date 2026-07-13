@@ -76,9 +76,11 @@ Three one-time steps:
 
 1. Install Docker (Docker Desktop on macOS/Windows) if it isn't already present
    — the only unavoidable local install, and far easier than building OpenFHE.
-2. Pull the image: `docker pull ghcr.io/niobiuminc/fhe-dev:latest`.
+2. Pull the image: `docker pull ghcr.io/niobiuminc/fhe-dev:v0.5.0` — the
+   pinned release this skill version was validated against (`:latest` tracks
+   the newest release; prefer the pin for reproducibility).
 3. Run the smoke test:
-   `docker run --rm ghcr.io/niobiuminc/fhe-dev:latest fhe-smoke-test`. It builds
+   `docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.5.0 fhe-smoke-test`. It builds
    and runs a trivial OpenFHE program and a numpy stub; a final `SMOKE OK` means
    the environment is ready.
 
