@@ -17,7 +17,7 @@ license: Apache-2.0
 compatibility: OpenFHE (C++ or Python); Niobium nb FHE DSL (niobium-client)
 metadata:
   author: Niobium Microsystems
-  version: 0.4.0
+  version: 0.5.0
 ---
 
 # FHE Application Design
@@ -95,7 +95,7 @@ and troubleshooting).
 ## Stage 1: Establish the Privacy Model
 
 Before thinking about circuits, parameters, or code, work with the user to
-answer four questions:
+answer five questions:
 
 1. **Who are the parties, what do they hold, and who are the adversaries?**
    Map out every participant: what data they hold, what must stay private,
@@ -247,7 +247,12 @@ four tests, in order of importance:
    adds noise. The longest chain of dependent multiplications is the
    *multiplicative depth*, and it drives nearly every parameter choice.
    Shallow circuits (a handful of sequential multiplications) are practical.
-   Deep circuits may require bootstrapping, which is very expensive.
+   Treat the **no-bootstrap depth ceiling** (Stage 6: roughly depth 25–30 at
+   N = 2^16, 128-bit, scaling 45) as a hard feasibility bound, like the ring
+   floor: a circuit above it needs depth reduction, a user-approved
+   client-assisted recryption split, or bootstrapping — the escalation ladder
+   in Stage 6, every rung of which beyond depth reduction requires the user's
+   advance approval.
 
 4. **Is there natural SIMD parallelism?** FHE schemes pack thousands of
    independent values into a single ciphertext. A single operation processes
@@ -296,9 +301,19 @@ structure already in place:
    set there is no way to tell whether a cheaper parameter choice costs 0.1%
    accuracy or destroys the model.
 
+   **Pick the metric to match the task.** For rare-class workloads (fraud,
+   intrusion, anomaly detection) raw accuracy and even decision-agreement are
+   misleading: the negative class dominates, so a polynomial that destroys the
+   detector can still show >99% agreement (a low-degree approximation can score
+   99.6% agreement while detecting zero anomalies). Set the accuracy floor in
+   the task metric — recall/precision/F1 on the target class — and evaluate
+   every gate, sweep point, and comparison against it.
+
 2. Separate client-side and server-side responsibilities cleanly. The server
    must complete its work in one pass — no round trips, no branching on
-   intermediate values.
+   intermediate values. (Sole exception: a client-assisted recryption split
+   for circuits over the depth ceiling, which the user must approve in
+   advance — see Stage 6.)
 
 3. Remove all data-dependent control flow. Replace conditional branches with
    branchless arithmetic (evaluate both sides and use an arithmetic selector).
@@ -410,6 +425,16 @@ that Stage 3 requires:
      reject the records whose pre-activations escape it; accept a small,
      reported reject rate). This is a two-threshold, packing-aware decision —
      see *"Filter, don't force"* below.
+   - **a′. Clip (winsorize) instead of rejecting — when semantics allow.** For
+     continuous, standardized features, saturating each feature at the box
+     bounds is often strictly better than rejecting: it is airtight by
+     construction (every record is admitted, so batched packing is safe), the
+     reject rate is zero and the composition guard is vacuous, and on scaled
+     data it typically flips very few decisions (measure and report the flip
+     rate on the reference model). Only valid where an extreme value saturated
+     to the bound still *means* "extreme" — never clip categorical/ordinal
+     encodings, hashes, or identifiers, where a clipped value is a different
+     value, not a larger one.
    - **b. (batched only) Drop batching.** If an airtight pre-flight filter would
      reject too many, recommend switching to per-record packing so failures can
      be isolated post-flight instead of taking the whole batch down.
@@ -431,6 +456,27 @@ depends on being present during training); check whether the user already has a
 normalized/bounded variant before asking them to train one. Always deliver a
 best-effort runnable design (tight domain + the filter) so the user has a working
 pipeline to compare against.
+
+Three field notes on rung c (from applying it in practice):
+
+- **Normalization bounds the bulk, not the tail.** BatchNorm plus input
+  clipping still leaves worst-case pre-activations several× beyond the p99.99
+  band (rare inputs aligned with learned weights), so expect the re-entered
+  model to land in the *workable* grade — tight domains plus a box — rather
+  than automatically in *easy*.
+- **Report the retrain's price.** Measure the task-metric delta between the
+  original and the FHE-friendly reference and put it in the gate ledger. The
+  quality cost of an FHE design usually lives in the model change, not in
+  encryption (which should be decision-exact downstream) — attribute it there
+  so nobody blames FHE for it.
+- **Prefer empirical envelopes over provable bounds.** Interval-arithmetic
+  worst-case bounds on pre-activations tend to be uselessly loose, and
+  training-time hard projections that force tight provable bounds can fight
+  the optimizer and crater the task metric. Before committing to
+  bounded-by-construction training, cost it against the alternative: calibrate
+  approximation domains on the pre-activation envelope over the *full* training
+  set plus a safety margin, and document the residual escape risk (Stage 9)
+  with its packing-dependent blast radius and mitigation.
 
 #### Filter, don't force: the two-threshold check and the composition guard
 
@@ -594,6 +640,50 @@ In both cases the bounds box is the design-emitted `feature_bounds.csv`
 (input ranges only); the client enforces it. Report the reject and
 fallback rates as protocol outputs (Stage 9).
 
+**Multi-batch protocol (dataset > slot count).** When records exceed the slots
+per ciphertext (N/2 = 32,768 for CKKS at 2^16), the extension is *protocol,
+not circuit*: the identical circuit runs over ⌈records / slots⌉ slot-batches.
+Codify the loop rather than improvising it:
+
+- Keys and context ship once; only ciphertext batches repeat. Per-batch
+  metadata (record count, batch index) travels with each batch, and the client
+  aggregates results client-side.
+- The server may process batches task-parallel; the binding constraint is
+  memory (peak ≈ one batch's working set of live ciphertexts), not depth or
+  keys. Per-record amortized cost is unchanged.
+- **Failure isolation gains a middle granularity.** A decode failure now costs
+  one slot-batch, not the whole dataset — between `batched` and `per_record`
+  on the isolation spectrum. This softens the airtight-filter requirement in
+  proportion to the batch count, and gives a natural bisection unit when
+  isolating an out-of-domain record.
+- run_test and the two-process demo should accept a batch count so the
+  multi-batch path is exercised before deployment. For a worked streaming
+  example, see `references/example-network-intrusion-detection.md`.
+
+**Patterns for NN inference under column-major packing.** When the workload is
+neural-network inference with feature-major (column-major) packing, four
+structural moves cost little or nothing and repeatedly pay off:
+
+- *Per-unit approximation domains are free.* Each hidden unit is its own
+  ciphertext, so every unit can carry its own polynomial coefficients and
+  domain at the same degree — zero extra depth. A pooled (per-layer) domain
+  must span the widest unit; per-unit domains shrink most units' intervals
+  dramatically and can be the difference between a failing and an exact
+  polynomial circuit. Fit per unit, not per layer.
+- *Fold dead units away.* Regularized models often contain units whose
+  pre-activation is (nearly) constant; fold their activation output into the
+  next layer's bias exactly. Besides shrinking the circuit, this prevents
+  degenerate zero-width domains from poisoning per-unit fitting (symptom:
+  median per-unit envelope width ≈ 0).
+- *Emit a margin, not logits.* For a two-class argmax head, compute the single
+  logit difference in-circuit and let the client decide by sign — one output
+  ciphertext instead of two, and the decision rule matches the reference by
+  construction (see Stage 7 on decision rules).
+- *Expect rotation-free circuits.* Column-major linear layers are pure
+  cipher×plaintext multiply-accumulate across ciphertexts — no rotations,
+  hence no rotation keys (normally the dominant key cost). Rotation keys enter
+  only if slot aggregation (rotate-and-sum) is used.
+
 **Comparison strategies in CKKS.** Since CKKS operates on approximate reals,
 exact comparison is not directly possible. Common approaches include:
 - *Squared Euclidean distance + iterated squaring*: compute the distance
@@ -725,10 +815,19 @@ opposite fixes:
   degree. Degree drop is the last resort: it sheds the very accuracy you are
   trying to keep.
 
-  *Calibration anchor:* a degree-7 sigmoid over a tight domain (≈[-7, 7]) on the
-  fraud MLP decodes cleanly at **depth 15 / scaling 59 / first_mod 60 / N = 2^16**
-  but **overflows at depth 12 / scaling 45** *at the same operand magnitude* —
-  the discriminator is the chain budget, not the values.
+  *Calibration anchors* (both on the fraud MLP, N = 2^16, first_mod 60):
+  a degree-7 sigmoid circuit (naive count: 11 levels used) **overflows at
+  depth 12 / scaling 45** but decodes cleanly at depth 15 / scaling 59; a
+  degree-27 circuit (naive count: 15 levels used, operands ≤ ~1) **decodes
+  cleanly at depth 16 / scaling 45** with measured output noise ≈ 5e-5. Read
+  together: the discriminator is the *effective spare-level margin*, not the
+  degree or the operand size. The depth-12 failure at a nominal one-level
+  spare is the cautionary detail — naive per-op level counts can undercount
+  actual consumption by a level or more under FLEXIBLEAUTO (encoding and
+  rescale overheads), turning a nominal spare of one into an effective spare
+  of zero. **When the naive count leaves exactly one spare level, treat it as
+  possibly zero and budget one more.** The decode-safety inequality above
+  should be evaluated with that pessimism applied.
 
 **Predict decode failure from the cleartext side — don't spend an encrypted run
 to discover it.** The float reference twin can't see the CKKS scale, but you can
@@ -747,6 +846,37 @@ encryption. This turns the two-speed loop's fast cleartext pass into a decode
 gate, so the expensive encrypted run is reserved for designs already predicted
 safe. Erring conservative is cheap: a falsely-"unsafe" verdict only adds depth,
 which is the correct move anyway.
+
+**The no-bootstrap depth ceiling (and the escalation ladder above it).** The
+modulus a given ring can carry at the target security level caps the depth you
+can buy: max depth ≈ (logQP_ceiling − first_mod − key-switching overhead) /
+scaling. At N = 2^16 and 128-bit classical, logQP ≲ ~1780, so with scaling 45
+the ceiling is roughly **depth 25–30**. Treat it as a hard feasibility bound
+(like the ring-dimension floor) and surface it in Stage 2's depth test. When a
+circuit exceeds it, escalate in order:
+
+- **a. Reduce depth** with the Stage 5 tools (tree reductions, lower degrees,
+  folding, boundary-representation changes). This is the only rung the agent
+  may take on its own.
+- **b. Client-assisted recryption** — split the circuit at a level boundary;
+  the server returns the intermediate ciphertext, the client decrypts and
+  re-encrypts fresh, and the server continues. Cheap (no extra crypto
+  machinery) and privacy-clean in the standard model — intermediates are
+  revealed *to the client only*, who owns the data. But it changes the
+  protocol shape: it breaks the one-pass rule (Stage 3) and adds round trips
+  the user will not be expecting. **Requires the user's advance approval —
+  never adopt round trips silently.** Document in Stage 9 what each
+  intermediate reveals to the client (e.g., hidden activations partially
+  expose a server-held model).
+- **c. In-circuit bootstrapping** — supported in OpenFHE (EvalBootstrap) but
+  costs ~10–15 levels of overhead plus large constant factors, and is **not
+  supported on the target hardware backend**: designing for it commits the
+  deployment to a software-only path. Only with the user's explicit acceptance
+  of that trade.
+
+The choice between rungs b and c belongs to the **user**, made ahead of time
+with the trade-offs in front of them (round trips + intermediate exposure vs.
+software-only performance) — present both and ask; do not pick silently.
 
 **Size estimation.** After choosing parameters, estimate the physical sizes
 of ciphertexts and keys. These determine client memory requirements and
@@ -865,6 +995,14 @@ Build and validate it:
      floor, stop and report rather than build an encrypted version of a design
      that already fails in plaintext.
 
+Also derive and record the **application-level noise tolerance** from the twin:
+for classifiers, the minimum decision margin over the test set (optionally
+confirmed by injecting synthetic per-level noise into the twin and showing zero
+decision flips at noise far coarser than CKKS delivers); for continuous
+outputs, the maximum output error the application can absorb. This turns Stage
+8's run_test comparison into an objective pass criterion — measured encrypted
+error below the recorded tolerance — instead of an arbitrary error threshold.
+
 A validated, decode-safe twin is the primary design deliverable. Stage 8 turns it
 into encrypted code.
 
@@ -918,8 +1056,9 @@ can be deployed independently:
    output.
 
 4. **decrypt** — Reads the secret key and output ciphertexts. Decrypts and
-   decodes the results. Compares against the plaintext reference
-   implementation from Stage 3 to validate correctness.
+   decodes the results, applying the reference's exact decision rule
+   (Stage 7). Validation against the twin belongs to run_test (item 5 below),
+   not to decrypt — keep the production binary free of test-only inputs.
 
 Use CMake with `find_package(OpenFHE)` for all four programs. **Use this exact
 include/link block — OpenFHE splits its headers across `core/`, `pke/`, and
@@ -959,11 +1098,15 @@ Also produce a fifth program:
 5. **run_test** — A local test runner that orchestrates the full pipeline for
    development. It invokes keygen → encrypt → server → decrypt in sequence,
    passing serialized files between them, then automatically compares
-   decrypted outputs against the plaintext reference from Stage 3. It should
-   report: per-sample error (absolute and relative), mean and max error
-   across the test set, serialized file sizes at each boundary (keys,
-   input ciphertexts, output ciphertexts — for comparison against Stage 6
-   estimates), and wall-clock time for each stage. This program is a
+   decrypted outputs against the **faithful twin's** outputs (the executable
+   spec — the twin-vs-reference delta is already known from Stage 7, so
+   comparing to the twin isolates encryption noise; report the two deltas
+   separately, never conflated). It should report: per-sample error (absolute
+   and relative) against the noise tolerance recorded in Stage 7 — that
+   comparison is the pass criterion — mean and max error across the test set,
+   serialized file sizes at each boundary (keys, input ciphertexts, output
+   ciphertexts — for comparison against Stage 6 estimates), and wall-clock
+   time for each stage. This program is a
    development tool, not a production artifact — in deployment, the four
    core programs run on separate machines. But during the edit-test-iterate
    cycle, run_test makes it fast to validate changes without manually
@@ -1065,6 +1208,35 @@ As a final design step, document the full protocol and its security properties:
    observable, so the bounds reveal a coarse decision boundary on the inputs.
 7. Threats not addressed (malicious adversaries, side channels, exhaustive
    query attacks, collusion).
+
+### Close-out deliverables
+
+Ship three documents with the application — part of the deliverable, not
+optional extras:
+
+1. **A brief narrative report** of what happened: the gate verdicts, the
+   decisions taken at each stage (including the user's choices), the dead ends
+   explored and why they were abandoned, and what the final design is. This is
+   the document a colleague reads to understand *why* the application looks
+   the way it does.
+
+2. **A results report** comparing the three versions of the application with
+   task-appropriate metrics (see Stage 3 — for rare-class workloads that means
+   precision/recall/F1 on the target class, never raw accuracy alone):
+   *reference vs. ground truth* (the model's task quality, including any delta
+   against a pre-retrain original), *twin vs. reference* (the cost of the
+   polynomial approximation), and *FHE vs. twin* (the cost of encryption —
+   measured error against the Stage 7 noise tolerance). Attribute every
+   quality delta to the stage that caused it; encryption should be at the
+   bottom of that list. Include the deployment profile: parameters, and the
+   boundary sizes and timings measured by run_test.
+
+3. **A run README** in the application directory: prerequisites (Docker + the
+   FHE-dev image), how to regenerate any non-committed inputs, the
+   build+run_test command with expected output and resource needs, and how to
+   run the two-process demo including the two-host variant. A recipient with
+   Docker and the repository should need nothing else to reproduce the
+   encrypted run.
 
 This documentation serves both as a security specification and as a guide
 for anyone reviewing or extending the application.
