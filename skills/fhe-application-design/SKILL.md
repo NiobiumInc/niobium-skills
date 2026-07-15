@@ -829,19 +829,30 @@ opposite fixes:
   degree. Degree drop is the last resort: it sheds the very accuracy you are
   trying to keep.
 
-  *Calibration anchors* (both on the fraud MLP, N = 2^16, first_mod 60):
+  *Calibration anchors* (all on the fraud MLP, N = 2^16, first_mod 60):
   a degree-7 sigmoid circuit (naive count: 11 levels used) **overflows at
   depth 12 / scaling 45** but decodes cleanly at depth 15 / scaling 59; a
   degree-27 circuit (naive count: 15 levels used, operands ≤ ~1) **decodes
-  cleanly at depth 16 / scaling 45** with measured output noise ≈ 5e-5. Read
-  together: the discriminator is the *effective spare-level margin*, not the
-  degree or the operand size. The depth-12 failure at a nominal one-level
-  spare is the cautionary detail — naive per-op level counts can undercount
-  actual consumption by a level or more under FLEXIBLEAUTO (encoding and
-  rescale overheads), turning a nominal spare of one into an effective spare
-  of zero. **When the naive count leaves exactly one spare level, treat it as
-  possibly zero and budget one more.** The decode-safety inequality above
-  should be evaluated with that pessimism applied.
+  cleanly at depth 16 / scaling 45** on a 5,000-record suite with measured
+  output noise ≈ 5e-5 — but **the same circuit at the same parameters
+  overflows `Decode` when the slot population changes**: a fidelity suite of
+  19,302 records dominated by large-margin rows (9,651 positives vs the 5k
+  suite's 26) crossed the decode threshold at depth 16 and needed depth 17.
+  Read together: the discriminator is the *effective spare-level margin*, not
+  the degree or the operand size — and that margin is **data-composition-
+  dependent**, because CKKS multiplication noise is message-dependent (≈ m·e
+  terms) and the decode check estimates error across all populated slots. A
+  circuit validated on a thin or class-imbalanced sample has not been
+  validated for a deployment where many slots carry large values. The
+  depth-12 failure at a nominal one-level spare is the cautionary detail —
+  naive per-op level counts can undercount actual consumption by a level or
+  more under FLEXIBLEAUTO (encoding and rescale overheads), turning a nominal
+  spare of one into an effective spare of zero. **When the naive count leaves
+  exactly one spare level, treat it as possibly zero and budget one more; for
+  production parameters, verify decode on the worst-case slot population
+  (e.g. an all-positive batch for a rare-class detector), not only on a
+  base-rate sample.** The decode-safety inequality above should be evaluated
+  with that pessimism applied.
 
 **Predict decode failure from the cleartext side — don't spend an encrypted run
 to discover it.** The float reference twin can't see the CKKS scale, but you can
