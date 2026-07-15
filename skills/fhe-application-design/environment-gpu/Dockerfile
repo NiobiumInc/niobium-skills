@@ -14,7 +14,7 @@
 # Run (GPU required):
 #   docker run --rm --gpus all -v "$PWD":/work -w /work ghcr.io/niobiuminc/fhe-dev-gpu:dev <cmd>
 
-FROM nvidia/cuda:12.8.1-devel-ubuntu22.04
+FROM docker.io/nvidia/cuda:12.8.1-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
