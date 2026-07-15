@@ -27,8 +27,8 @@ OpenFHE from source. You need [Docker](https://www.docker.com/products/docker-de
 and a one-time pull of the image (several GB):
 
 ```bash
-docker pull ghcr.io/niobiuminc/fhe-dev:v0.5.0
-docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.5.0 fhe-smoke-test   # ends with SMOKE OK
+docker pull ghcr.io/niobiuminc/fhe-dev:v0.6.0
+docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.6.0 fhe-smoke-test   # ends with SMOKE OK
 ```
 
 The skill walks you through this as its Stage 0, so you can also just start a

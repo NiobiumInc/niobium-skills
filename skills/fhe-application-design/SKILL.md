@@ -17,7 +17,7 @@ license: Apache-2.0
 compatibility: OpenFHE (C++ or Python); Niobium nb FHE DSL (niobium-client)
 metadata:
   author: Niobium Microsystems
-  version: 0.5.0
+  version: 0.6.0
 ---
 
 # FHE Application Design
@@ -76,11 +76,11 @@ Three one-time steps:
 
 1. Install Docker (Docker Desktop on macOS/Windows) if it isn't already present
    — the only unavoidable local install, and far easier than building OpenFHE.
-2. Pull the image: `docker pull ghcr.io/niobiuminc/fhe-dev:v0.5.0` — the
+2. Pull the image: `docker pull ghcr.io/niobiuminc/fhe-dev:v0.6.0` — the
    pinned release this skill version was validated against (`:latest` tracks
    the newest release; prefer the pin for reproducibility).
 3. Run the smoke test:
-   `docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.5.0 fhe-smoke-test`. It builds
+   `docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.6.0 fhe-smoke-test`. It builds
    and runs a trivial OpenFHE program and a numpy stub; a final `SMOKE OK` means
    the environment is ready.
 
@@ -685,6 +685,18 @@ structural moves cost little or nothing and repeatedly pay off:
   cipher×plaintext multiply-accumulate across ciphertexts — no rotations,
   hence no rotation keys (normally the dominant key cost). Rotation keys enter
   only if slot aggregation (rotate-and-sum) is used.
+- *Range-grouped domains when units share a ciphertext.* Recurrent and packed
+  layouts often put all hidden units in ONE ciphertext (slot = unit×record),
+  where per-unit polynomials aren't free. The middle ground: group units by
+  operand envelope, mask per group (one level), and evaluate one polynomial
+  per group over its own tight domain. Four groups turned an LSTM cell-state
+  tanh from a failing pooled domain (11-cycle error) into a passing one
+  (0.77) at the same total depth. The group masks can skip the post-mask when
+  the interpolant is odd (masked-out slots evaluate to ~0).
+- *Emit normalized outputs; scale in cleartext at decrypt.* Any output scale
+  (×125 to physical units, ×class-count, …) folds out of the circuit for
+  free, shrinking the decode budget by its magnitude — and enabling a final
+  refresh in bootstrapped designs (see Stage 6).
 
 **Comparison strategies in CKKS.** Since CKKS operates on approximate reals,
 exact comparison is not directly possible. Common approaches include:
@@ -880,6 +892,79 @@ The choice between rungs b and c belongs to the **user**, made ahead of time
 with the trade-offs in front of them (round trips + intermediate exposure vs.
 software-only performance) — present both and ask; do not pick silently.
 
+### Designing with bootstrapping (rung c in practice)
+
+Everything in this section was learned the hard way on a real deep-recurrent
+workload (a 30-step LSTM, 92 refreshes per batch). The core discovery:
+**the faithful twin validates the circuit, but not the crypto runtime.**
+Magnitude limits, refresh accuracy, and level mechanics live outside the
+twin's model, and each one needs its own cheap empirical probe *before* the
+expensive encrypted build. In order:
+
+1. **Run the bootstrap lab FIRST — before designing anything.** The FHE-dev
+   image ships `fhe-boot-lab <scaling> <first> <depth> [slots] [dnum]
+   [budget] [sparse] [iters] [corrFactor]`: it measures REAL bootstrap error
+   at candidate parameters in minutes. Two traps make naive validation
+   worthless:
+   - **EvalBootstrap is a silent no-op** whenever the input has more levels
+     remaining than a refresh would return — a fresh ciphertext is never
+     really bootstrapped. Any test that doesn't first deplete the input
+     validates nothing (this invalidated an entire campaign's worth of
+     "passing" checks, including a dedicated precision benchmark). The lab
+     burns inputs down with plaintext mults and tags every refresh
+     [real] / [NO-OP!].
+   - **Bootstrap accuracy is a measured property, not a derived one.**
+     Parameters that pass keygen and run full circuits can still produce
+     garbage refreshes. Measured law for UNIFORM_TERNARY at N = 2^16:
+     error ≈ 2^(47 − scaling) — decode-fatal at scaling 38, ~2^2 at 45,
+     2^-3 at 50. **SPARSE_TERNARY** is the difference-maker: at scaling 50
+     it measures 2^-11 per refresh, 2^-10 across a chain, clean even from
+     depth−2. (Runner-up: 2-iteration uniform bootstrap ≈ 2^-6, at +1 level
+     and 2× time.)
+
+2. **Derive the noise requirement from the twin, then match the lab to it.**
+   Sweep per-refresh noise in the twin (count every refresh site × steps)
+   and find the coarsest level that still meets the goal floor — that is the
+   acceptance bar the lab measurement must clear, with margin. (The LSTM
+   passed at 2^-7 and failed at 2^-6; sparse@50's 2^-11 gave 16× margin.)
+
+3. **Every ciphertext entering EvalBootstrap needs magnitude ≲ 1** — the
+   internal sine approximation assumes small messages, and violations corrupt
+   SILENTLY and value-dependently (a cell state that grows past ~1 around
+   step 3 poisons everything after, and only the final decode complains).
+   Check the twin's measured envelopes at every refresh site and fold scales
+   into adjacent plaintext operands to comply — it is depth-free (into
+   Chebyshev output coefficients, into the next layer's weights; positively
+   homogeneous functions like ReLU tolerate exact scale-commuting).
+
+4. **Budget mechanics, all empirically confirmed:**
+   - `GetBootstrapDepth` is a *reserve*, not consumption; the real output
+     level is what counts (observed: reserve 20, actual 15 at {3,3}).
+     Budget with the measured number and print both.
+   - **first − scaling must be ≤ the correction factor (~7)** or
+     EvalBootstrap throws; use first = scaling + 1 like every OpenFHE
+     example. The "first_mod 60 for headroom" habit is incompatible with
+     bootstrapping.
+   - **Level budget {2,2} minimizes depth but explodes rotation-key COUNT**
+     (a 24 GB OOM in practice); {3,3} is the memory-sane default.
+   - The special modulus P rounds UP to whole ~60-bit primes:
+     `logQP ≈ logQ + 60·ceil((first + (ceil(towers/dnum)−1)·scaling)/60)`.
+     Use this pessimistic form against the N = 2^16 cap (~1772) — the naive
+     `logQ·(1+1/dnum)` underestimates and cost three keygen rejections.
+   - **Split-step segmentation** is the depth lever: divide one logical step
+     into k bootstrap segments to shrink the usable-depth requirement, which
+     shrinks logQ, dnum pressure, and key sizes all at once (a 16-level step
+     became two ~8-level segments; more, cheaper refreshes beat fewer,
+     costlier levels).
+   - Refreshes **self-regulate** via the no-op behavior: place them at
+     segment boundaries and they fire only when depth demands — but only
+     after the lab has proven near-bottom refreshes clean at your config.
+
+5. **Emit normalized outputs (≤ 1) and bootstrap the result as the last
+   server op.** The client applies any output scale in cleartext. This makes
+   the final decode unconditionally safe at a fresh level and removes output
+   magnitude from the decode budget entirely.
+
 **Size estimation.** After choosing parameters, estimate the physical sizes
 of ciphertexts and keys. These determine client memory requirements and
 network bandwidth — designers are often surprised by how large FHE objects
@@ -1001,9 +1086,22 @@ Also derive and record the **application-level noise tolerance** from the twin:
 for classifiers, the minimum decision margin over the test set (optionally
 confirmed by injecting synthetic per-level noise into the twin and showing zero
 decision flips at noise far coarser than CKKS delivers); for continuous
-outputs, the maximum output error the application can absorb. This turns Stage
-8's run_test comparison into an objective pass criterion — measured encrypted
-error below the recorded tolerance — instead of an arbitrary error threshold.
+outputs, the maximum output error the application can absorb. For bootstrapped
+designs, sweep **per-refresh** noise at every refresh site — the coarsest
+passing level is the accuracy bar the bootstrap lab must clear (Stage 6). This
+turns Stage 8's run_test comparison into an objective pass criterion —
+measured encrypted error below the recorded tolerance — instead of an
+arbitrary error threshold.
+
+**For packed/rotational designs, add a slot-level simulation gate.** Export
+every plaintext vector the server will multiply by (BSGS diagonals, masks,
+bias vectors) from the design side, then replay the exact rotation/multiply/
+add program in numpy (np.roll for EvalRotate) and require it to reproduce the
+twin bit-exactly before any C++ is written. This moves all indexing cleverness
+into testable Python; the C++ server becomes a mechanical transcription of a
+verified program. In practice the encrypted intermediates then match this
+simulation to four decimal places — when they don't, the divergence is crypto
+runtime, not circuit (see the bootstrapping section's probes).
 
 A validated, decode-safe twin is the primary design deliverable. Stage 8 turns it
 into encrypted code.
@@ -1169,10 +1267,24 @@ extra.
    insufficient precision, or a missed non-linear operation.
 
 2. **Debug.** Debugging encrypted programs is hard because all intermediate
-   values are encrypted. The practical approach is to add temporary decrypt
-   calls in the server program (using the secret key, for debugging only),
-   inspect intermediate values, and compare against the plaintext
-   implementation in a binary-search style.
+   values are encrypted. Build the instrumentation into the server as
+   standard equipment rather than improvising it later: an env-gated debug
+   mode (e.g. `FHE_DEBUG_SK=<path>` + `FHE_DEBUG_STEPS=<n>`) that decrypts
+   after each named operation inside a try/catch, printing level and
+   max-magnitude (valid and junk slots separately) and stopping early. One
+   4-minute instrumented run converts "decode failed at the end" into "this
+   exact operation, this exact level" — and a DECODE FAIL on an intermediate
+   is itself the binary-search signal. Never ship the mode enabled; the
+   server's no-secret-key guard stays independent of it.
+
+   **Triage every expensive failure with a minutes-scale probe first.** The
+   two-speed discipline applies to debugging too: an all-slots simulation
+   sweep (junk-slot magnitudes), the bootstrap lab (refresh accuracy at the
+   exact parameters), and the instrumented-decrypt run each cost minutes and
+   each can convict or exonerate a whole failure class before the next
+   half-hour encrypted run. A campaign of five consecutive encrypted-run
+   failures was resolved entirely by such probes — the full pipeline was
+   only re-run once, and it passed.
 
 3. **Profile and iterate.** Review the timing and file-size reports from
    run_test. Both memory and runtime will likely be large — gigabytes of
@@ -1232,6 +1344,21 @@ optional extras:
    quality delta to the stage that caused it; encryption should be at the
    bottom of that list. Include the deployment profile: parameters, and the
    boundary sizes and timings measured by run_test.
+
+   **Open the results with a plain-language "How we know it passes" section**
+   written for a non-cryptographer. Its skeleton: (a) the answer key — the
+   reference's outputs on the test set, produced independently of the FHE
+   work; (b) the test — the same inputs encrypted, computed on blind by the
+   server, decrypted by the client, and compared side by side against the
+   answer key with the concrete numbers and the tolerance they clear;
+   (c) why any difference exists at all — polynomial stand-ins for smooth
+   functions and a faint hiss of encryption noise, each quantified, each
+   budgeted for in advance; (d) why it isn't a lucky run — the same agreement
+   at every verification layer (twin, slot-level simulation, encrypted run);
+   and (e) the honest caveat separating fidelity-to-the-model from
+   quality-of-the-model, so nobody reads "matches the reference" as "predicts
+   the world well." This section is what stakeholders actually read; the
+   tables below it are the evidence.
 
 3. **A run README** in the application directory: prerequisites (Docker + the
    FHE-dev image), how to regenerate any non-committed inputs, the
@@ -1293,6 +1420,14 @@ Throughout the design process, keep these principles in mind:
   quantization, packing) so it predicts encrypted behavior modulo noise. It is
   the primary design artifact and the fast proxy that lets you search parameters
   in seconds and reserve the expensive encrypted build for confirmation.
+
+- **The twin validates the circuit, not the crypto runtime.** Bootstrap
+  magnitude limits, refresh accuracy, level mechanics, and library semantics
+  (silent no-ops, correction factors) are invisible to the twin — a design
+  can match the reference perfectly in plaintext and still produce garbage
+  encrypted. Each runtime property needs its own cheap empirical probe
+  (`fhe-boot-lab`, the slot-level simulation, instrumented decrypts) before
+  and during the encrypted build.
 
 - **Depth is the critical resource.** Multiplicative depth drives parameter
   sizes, which drive memory and performance. Every design decision should
