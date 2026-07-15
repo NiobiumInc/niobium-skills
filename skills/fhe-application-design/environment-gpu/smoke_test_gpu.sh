@@ -29,7 +29,9 @@ int main() {
     cc->EvalMultKeyGen(keys.secretKey);
     cc->LoadContext(keys.publicKey);
     std::vector<double> x = {1, 2, 3, 4, 5, 6, 7, 8};
-    auto ct = cc->Encrypt(keys.publicKey, cc->MakeCKKSPackedPlaintext(x));
+    // FIDESlib (like OpenFHE >=1.5) takes Plaintext by non-const ref: name it
+    auto pt = cc->MakeCKKSPackedPlaintext(x);
+    auto ct = cc->Encrypt(keys.publicKey, pt);
     auto sq = cc->EvalMult(ct, ct);
     Plaintext out; cc->Decrypt(keys.secretKey, sq, &out); out->SetLength(8);
     auto v = out->GetRealPackedValue();
