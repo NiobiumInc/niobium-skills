@@ -37,19 +37,27 @@ RUN pip3 install --no-cache-dir "cmake>=3.25.2,<4"
 # NOTE: pin FIDESLIB_VERSION to a release tag once validated on hardware.
 ARG FIDESLIB_VERSION=main
 ARG FIDESLIB_ARCH=120
+# NOTE: FIDESlib's FIDESLIB_INSTALL_OPENFHE hook calls
+# `execute_process(./build.sh WORKING_DIRECTORY ../deps)` with a RELATIVE
+# path, so cmake MUST be invoked from inside the build dir (cd build; cmake ..)
+# or ../deps resolves against the caller's cwd and the OpenFHE install fails.
+# Also: keep the optional gpu-test copy in braces so its `|| true` cannot
+# swallow a failure of the whole chain (that masked exactly this bug once).
 RUN git clone --depth 1 --branch ${FIDESLIB_VERSION} \
         https://github.com/CAPS-UMU/FIDESlib.git /tmp/fideslib \
- && cmake -S /tmp/fideslib -B /tmp/fideslib/build \
+ && mkdir /tmp/fideslib/build \
+ && cd /tmp/fideslib/build \
+ && cmake .. \
         -DCMAKE_BUILD_TYPE=Release \
         -DFIDESLIB_ARCH=${FIDESLIB_ARCH} \
         -DFIDESLIB_INSTALL_OPENFHE=ON \
         -DFIDESLIB_COMPILE_TESTS=OFF \
         -DFIDESLIB_COMPILE_BENCHMARKS=OFF \
- && cmake --build /tmp/fideslib/build -j"$(nproc)" \
- && cmake --build /tmp/fideslib/build --target install -j \
- && cp /tmp/fideslib/build/gpu-test /usr/local/bin/fideslib-gpu-test 2>/dev/null || true \
+ && cmake --build . -j"$(nproc)" \
+ && cmake --build . --target install -j \
+ && { cp gpu-test /usr/local/bin/fideslib-gpu-test 2>/dev/null || true; } \
  && ldconfig \
- && rm -rf /tmp/fideslib
+ && cd / && rm -rf /tmp/fideslib
 
 COPY smoke_test_gpu.sh /usr/local/bin/fhe-gpu-smoke-test
 RUN chmod +x /usr/local/bin/fhe-gpu-smoke-test
