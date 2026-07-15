@@ -47,9 +47,10 @@ cmake_minimum_required(VERSION 3.25.2)
 set(CMAKE_CXX_STANDARD 20)
 project(smoke LANGUAGES CXX)
 find_package(fideslib REQUIRED CONFIG)
+find_package(OpenMP REQUIRED)  # static OpenFHE/FIDESlib libs need gomp at link
 set(CMAKE_CXX_COMPILER ${FIDESLIB_CXX_COMPILER})
 add_executable(smoke smoke.cpp)
-target_link_libraries(smoke PRIVATE fideslib::fideslib)
+target_link_libraries(smoke PRIVATE fideslib::fideslib OpenMP::OpenMP_CXX)
 EOF
 cmake -S "$tmp" -B "$tmp/b" >/dev/null && cmake --build "$tmp/b" -j >/dev/null
 "$tmp/b/smoke"
