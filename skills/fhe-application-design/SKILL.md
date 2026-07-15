@@ -1219,8 +1219,14 @@ Also produce a fifth program:
    and relative) against the noise tolerance recorded in Stage 7 — that
    comparison is the pass criterion — mean and max error across the test set,
    serialized file sizes at each boundary (keys, input ciphertexts, output
-   ciphertexts — for comparison against Stage 6 estimates), and wall-clock
-   time for each stage. This program is a
+   ciphertexts — for comparison against Stage 6 estimates), wall-clock
+   time for each stage, and the **peak resident memory of the server stage**
+   (on Linux, wrap the server invocation and read
+   `resource.getrusage(RUSAGE_CHILDREN).ru_maxrss` — no extra packages
+   needed). Peak server RSS is the number every deployment-sizing
+   conversation asks for, and Stage 6's estimates cover key/ciphertext
+   *sizes* but not the working set with temporaries (bootstrapping keys and
+   scratch can dominate); measure it, don't infer it. This program is a
    development tool, not a production artifact — in deployment, the four
    core programs run on separate machines. But during the edit-test-iterate
    cycle, run_test makes it fast to validate changes without manually
@@ -1356,8 +1362,9 @@ optional extras:
    polynomial approximation), and *FHE vs. twin* (the cost of encryption —
    measured error against the Stage 7 noise tolerance). Attribute every
    quality delta to the stage that caused it; encryption should be at the
-   bottom of that list. Include the deployment profile: parameters, and the
-   boundary sizes and timings measured by run_test.
+   bottom of that list. Include the deployment profile: parameters, the
+   boundary sizes and timings measured by run_test, and the measured peak
+   server memory (with the Docker/host provisioning requirement it implies).
 
    **Open the results with a plain-language "How we know it passes" section**
    written for a non-cryptographer. Its skeleton: (a) the answer key — the
