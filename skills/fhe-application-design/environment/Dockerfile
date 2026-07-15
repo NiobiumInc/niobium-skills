@@ -33,7 +33,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # --- OpenFHE (pinned release) -----------------------------------------------
 # Build once, install to /usr/local, then drop the source tree to keep the
 # image smaller. This is the slow layer; it only runs at image-build time.
-ARG OPENFHE_VERSION=v1.2.3
+# v1.5.1: aligned with FIDESlib's patched fork (fideslib-ref-v1.5.1.1) so a
+# future GPU tier shares the client wire format. Bumped from v1.2.3; all three
+# challenge apps regression-tested against this pin before release.
+ARG OPENFHE_VERSION=v1.5.1
 RUN git clone --depth 1 --branch ${OPENFHE_VERSION} \
         https://github.com/openfheorg/openfhe-development.git /tmp/openfhe \
  && cmake -S /tmp/openfhe -B /tmp/openfhe/build \

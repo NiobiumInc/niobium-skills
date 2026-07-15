@@ -20,7 +20,10 @@ metadata:
   version: 0.6.0
 ---
 
-# FHE Application Design
+# FHE Application Design ("FHEanna")
+
+> Informally known as **FHEanna** (pronounced "fee-AH-na"). Patent pending.
+> The install/trigger name remains `fhe-application-design`.
 
 This skill guides developers through designing and building FHE applications
 using OpenFHE. It targets developers who are new to FHE but know how to code.
@@ -76,11 +79,11 @@ Three one-time steps:
 
 1. Install Docker (Docker Desktop on macOS/Windows) if it isn't already present
    — the only unavoidable local install, and far easier than building OpenFHE.
-2. Pull the image: `docker pull ghcr.io/niobiuminc/fhe-dev:v0.6.0` — the
+2. Pull the image: `docker pull ghcr.io/niobiuminc/fhe-dev:v0.7.0` — the
    pinned release this skill version was validated against (`:latest` tracks
    the newest release; prefer the pin for reproducibility).
 3. Run the smoke test:
-   `docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.6.0 fhe-smoke-test`. It builds
+   `docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.7.0 fhe-smoke-test`. It builds
    and runs a trivial OpenFHE program and a numpy stub; a final `SMOKE OK` means
    the environment is ready.
 

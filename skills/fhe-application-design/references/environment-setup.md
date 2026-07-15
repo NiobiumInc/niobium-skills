@@ -52,7 +52,7 @@ docker --version
 ### 2. Pull the FHE-dev image
 
 ```bash
-docker pull ghcr.io/niobiuminc/fhe-dev:v0.6.0
+docker pull ghcr.io/niobiuminc/fhe-dev:v0.7.0
 ```
 
 This is a one-time download of a prebuilt OpenFHE + CMake + Python-ML
@@ -64,7 +64,7 @@ Prove the environment can build and run OpenFHE C++ **and** run a numpy twin
 before you invest in a design:
 
 ```bash
-docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.6.0 fhe-smoke-test
+docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.7.0 fhe-smoke-test
 ```
 
 A successful run ends with `SMOKE OK` (after printing an `EvalAdd -> (5, 7, 9)`
@@ -78,7 +78,7 @@ EvalBootstrap silently no-ops on shallow inputs, so naive tests validate
 nothing). Run it before designing any bootstrapped circuit:
 
 ```bash
-docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.6.0 fhe-boot-lab 50 51 24 16384 3 3 1
+docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.7.0 fhe-boot-lab 50 51 24 16384 3 3 1
 ```
 
 ## How the container is used later (Stage 8)
@@ -88,7 +88,7 @@ into your project folder and hands you a ready-to-paste command. It looks like:
 
 ```bash
 # from your project folder
-docker run --rm -v "$PWD":/work ghcr.io/niobiuminc/fhe-dev:v0.6.0 \
+docker run --rm -v "$PWD":/work ghcr.io/niobiuminc/fhe-dev:v0.7.0 \
     bash -c "cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && \
              cmake --build build -j && ./build/run_test"
 ```
@@ -119,7 +119,7 @@ able to run it. The FHE-dev image bundles a CPU PyTorch, so you can produce the
 reference's ground-truth outputs there too:
 
 ```bash
-docker run --rm -v "$PWD":/work ghcr.io/niobiuminc/fhe-dev:v0.6.0 \
+docker run --rm -v "$PWD":/work ghcr.io/niobiuminc/fhe-dev:v0.7.0 \
     python3 run_reference.py
 ```
 
@@ -130,7 +130,7 @@ docker run --rm -v "$PWD":/work ghcr.io/niobiuminc/fhe-dev:v0.6.0 \
 - **`Cannot connect to the Docker daemon`** — Docker Desktop isn't running;
   start it and retry.
 - **The smoke test fails to compile** — you likely have a stale image; re-pull
-  (`docker pull ghcr.io/niobiuminc/fhe-dev:v0.6.0`).
+  (`docker pull ghcr.io/niobiuminc/fhe-dev:v0.7.0`).
 - **Permission errors on the mounted folder (Linux)** — pass
   `--user "$(id -u):$(id -g)"` to `docker run` so container-written files are
   owned by you.
