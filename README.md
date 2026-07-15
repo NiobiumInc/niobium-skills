@@ -8,7 +8,7 @@ Copilot, Windsurf, and more.
 
 ## Skills
 
-### [`fhe-application-design`](skills/fhe-application-design/) — design FHE applications
+### [`fhe-application-design`](skills/fhe-application-design/) — design FHE applications (a.k.a. **FHEanna**, "fee-AH-na" · patent pending)
 
 A ten-stage methodology (Stages 0–9) for designing and building Fully Homomorphic
 Encryption (FHE) applications with OpenFHE (optional Niobium DSL path) — from build
@@ -27,8 +27,8 @@ OpenFHE from source. You need [Docker](https://www.docker.com/products/docker-de
 and a one-time pull of the image (several GB):
 
 ```bash
-docker pull ghcr.io/niobiuminc/fhe-dev:v0.5.0
-docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.5.0 fhe-smoke-test   # ends with SMOKE OK
+docker pull ghcr.io/niobiuminc/fhe-dev:v0.7.0
+docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.7.0 fhe-smoke-test   # ends with SMOKE OK
 ```
 
 The skill walks you through this as its Stage 0, so you can also just start a

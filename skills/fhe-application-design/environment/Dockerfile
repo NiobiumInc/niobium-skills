@@ -33,7 +33,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # --- OpenFHE (pinned release) -----------------------------------------------
 # Build once, install to /usr/local, then drop the source tree to keep the
 # image smaller. This is the slow layer; it only runs at image-build time.
-ARG OPENFHE_VERSION=v1.2.3
+# v1.5.1: aligned with FIDESlib's patched fork (fideslib-ref-v1.5.1.1) so a
+# future GPU tier shares the client wire format. Bumped from v1.2.3; all three
+# challenge apps regression-tested against this pin before release.
+ARG OPENFHE_VERSION=v1.5.1
 RUN git clone --depth 1 --branch ${OPENFHE_VERSION} \
         https://github.com/openfheorg/openfhe-development.git /tmp/openfhe \
  && cmake -S /tmp/openfhe -B /tmp/openfhe/build \
@@ -57,6 +60,21 @@ RUN pip3 install --no-cache-dir --upgrade pip \
 # --- Smoke test -------------------------------------------------------------
 COPY smoke_test.sh /usr/local/bin/fhe-smoke-test
 RUN chmod +x /usr/local/bin/fhe-smoke-test
+
+# --- Bootstrap parameter lab -------------------------------------------------
+# Prebuilt probe: measures REAL CKKS bootstrap accuracy at candidate
+# parameters in minutes (EvalBootstrap silently no-ops on shallow inputs, so
+# naive tests validate nothing — this burns inputs down first). Run BEFORE
+# designing any bootstrapped circuit:  fhe-boot-lab <scaling> <first> <depth>
+COPY boot_lab.cpp /tmp/boot_lab.cpp
+RUN g++ -O2 -std=c++17 /tmp/boot_lab.cpp -o /usr/local/bin/fhe-boot-lab \
+        -I/usr/local/include/openfhe \
+        -I/usr/local/include/openfhe/core \
+        -I/usr/local/include/openfhe/pke \
+        -I/usr/local/include/openfhe/binfhe \
+        -I/usr/local/include/openfhe/third-party/include \
+        -lOPENFHEpke -lOPENFHEcore -lOPENFHEbinfhe -fopenmp \
+ && rm /tmp/boot_lab.cpp
 
 # The mounted project folder is bind-mounted here at run time:
 #   docker run --rm -v "$PWD":/work ghcr.io/niobiuminc/fhe-dev:latest <cmd>
