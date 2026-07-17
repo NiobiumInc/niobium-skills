@@ -35,7 +35,22 @@ This skill ships in the [`niobium-skills`](https://github.com/NiobiumInc/niobium
 catalog as an [Agent Skill](https://agentskills.io/specification) — a portable `SKILL.md`
 plus `references/`. It works with any agent that supports the standard.
 
-### Recommended: universal installer
+### Claude Cowork (plugin UI — not the CLI below)
+
+Cowork installs skills as **plugins** through its own interface. Do **not** use the
+`npx`/`gh` CLIs in the next sections for Cowork — those write to a coding agent's
+`.claude/skills/` (hence the "Claude Code" target and a `--global` option that doesn't
+apply to Cowork). Instead, add this catalog as a plugin marketplace:
+
+1. Open the **Cowork** tab, then **Customize** in the left sidebar → **Plugins**.
+2. Under **Personal plugins**, click **+** → **Add marketplace** → **Add from a
+   repository**, and enter `https://github.com/NiobiumInc/niobium-skills`.
+3. Click **Browse plugins**, find **fhe-application-design**, and click **Install**.
+4. In a task, type `/` (or the **+** button) to invoke the **FHEanna** skill.
+
+The FHE-dev Docker image (Stage 0) is still a separate `docker pull` — see Stage 0 below.
+
+### Coding agents: universal installer
 
 ```bash
 npx skills add NiobiumInc/niobium-skills --skill fhe-application-design
@@ -44,7 +59,7 @@ npx skills add NiobiumInc/niobium-skills --skill fhe-application-design
 This uses [skills.sh](https://skills.sh), a third-party cross-agent installer. It
 auto-detects your agent and writes the full skill folder (including `references/`) to the
 right directory — supporting Claude Code, Cursor, Codex, GitHub Copilot, Windsurf, Gemini,
-Cline, and ~20 more.
+Cline, and ~20 more. (For **Cowork**, use the plugin UI above instead.)
 
 ### GitHub CLI
 
