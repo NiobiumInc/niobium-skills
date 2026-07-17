@@ -21,6 +21,10 @@ feasibility, or structure a client–server protocol for encrypted computation.
 npx skills add NiobiumInc/niobium-skills --skill fhe-application-design
 ```
 
+> **Using Claude Cowork?** Don't use the CLI above — it targets coding agents
+> (Claude Code) and its `--global` option won't apply to Cowork. Install through
+> Cowork's plugin UI instead: see [Claude Cowork](#claude-cowork) below.
+
 **Prerequisites (beyond the skill itself):** building and running the encrypted
 application (Stage 8) happens in the prebuilt **FHE-dev container** — you never build
 OpenFHE from source. You need [Docker](https://www.docker.com/products/docker-desktop/)
@@ -54,6 +58,22 @@ npx skills add NiobiumInc/niobium-skills --skill <skill-name>
 
 [skills.sh](https://skills.sh) auto-detects your agent and writes the skill to the right
 directory.
+
+### Claude Cowork
+
+Cowork installs skills as **plugins** through its own UI — not the `npx`/`gh`
+CLIs above (those write to a coding agent's `.claude/skills/`, which is why they
+report a "Claude Code" target and offer a `--global` option that doesn't apply
+to Cowork). Add this repo as a plugin marketplace, then install the plugin:
+
+1. Open the **Cowork** tab, then **Customize** in the left sidebar → **Plugins**.
+2. Under **Personal plugins**, click **+** → **Add marketplace** → **Add from a
+   repository**, and enter `https://github.com/NiobiumInc/niobium-skills`.
+3. Click **Browse plugins**, find **fhe-application-design**, and click **Install**.
+4. In a task, type `/` (or the **+** button) to invoke the **FHEanna** skill.
+
+The FHE-dev Docker image (Stage 0) is still a separate `docker pull` — see
+Prerequisites above.
 
 ### GitHub CLI
 
