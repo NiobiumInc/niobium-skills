@@ -167,3 +167,43 @@ The Fog variant must clear the **same** bar as the CPU app, plus a free extra:
   computation in the DSL and generates OpenFHE. This add-on instead **reuses the
   finished OpenFHE app** through niobium-client's instrumented-OpenFHE entry
   point. Offer whichever the user wants; do not conflate them.
+
+## Heavy and bootstrapped circuits — field notes
+
+Applied across four apps (two MLPs, a bootstrapped LSTM, a deep CNN); these are
+the things that actually bit:
+
+- **Recording ≠ replay in cost.** Recording the trace is cheap and works even
+  for bootstrapped circuits — `EvalBootstrap` records cleanly (a single LSTM
+  step wrote a 2.6M-instruction trace including ~7,900 bootstrap-precompute
+  polynomials). The *local `fhetch_sim` replay* is the expensive part: a single
+  bootstrap at N=2¹⁶ (34-modulus chain, ~35 MB/poly) peaked ~14.5 GB and OOM-
+  killed a ~16 GB box. **Do not assume a circuit that records will replay
+  locally.**
+
+- **Pick the verification to the circuit's weight:**
+  - *Shallow (MLP-style):* record the whole circuit, replay locally, compare to
+    the twin (0 flips, error in the encryption-noise band) — clean full green.
+  - *Heavy/bootstrapped (deep RNN/CNN):* keep the emitted variant **full-shape**
+    but default to **record-and-stop** (an `NB_FOG_NO_REPLAY` env that writes the
+    trace and skips local replay). Hand the `*_workload_*/` trace to a
+    large-memory host or the Niobium compilation service for the actual replay/
+    deployment. Optionally offer a **bounded probe** (a `NB_FOG_STOP`/step-count
+    env that records one gate / one step / pre-bootstrap) for a *smoke* that
+    fits in memory and still proves rotations + Chebyshev + (recording of)
+    bootstrap.
+
+- **The recorder caches by (program_info + cache_parameters).** If you add a
+  probe/trim mode, **put the mode in `cache_parameters`** or a stale trace from a
+  previous mode will be replayed (symptom: `result('<name>') not found` because
+  the cached trace has different probes). Also clear the `*_workload_*/`
+  directory between runs to force a fresh recording.
+
+- **Bootstrap plumbing for the Fog server:** call `EvalBootstrapSetup(...)`
+  before recording, and ensure the bootstrap/rotation keys are provisioned to
+  the server home and captured by `tag_keys`. Pass `--no-ring-dim-check` for
+  N = 2¹⁶. These match niobium-client's own `bootstrap` example.
+
+- **Run artifacts are not source.** The key dirs and `*_workload_*/` trace dirs
+  regenerate each run — `.gitignore` them; commit only `app-fog/` sources + any
+  small data subset.

@@ -17,7 +17,7 @@ license: Apache-2.0
 compatibility: OpenFHE (C++ or Python); Niobium nb FHE DSL (niobium-client)
 metadata:
   author: Niobium Microsystems
-  version: 0.8.0
+  version: 0.8.1
 ---
 
 # FHE Application Design ("FHEanna")
