@@ -17,7 +17,7 @@ license: Apache-2.0
 compatibility: OpenFHE (C++ or Python); Niobium nb FHE DSL (niobium-client)
 metadata:
   author: Niobium Microsystems
-  version: 0.9.1
+  version: 0.10.0
 ---
 
 # FHE Application Design ("FHEanna")
@@ -56,6 +56,50 @@ whole methodology is the disciplined path from the first to the third:
 3. **The FHE program** — the encrypted implementation (Stage 8). If the twin is
    decode-safe and matches the reference, this step should reproduce it modulo
    encryption noise.
+
+## Communicating with the user
+
+The typical user of this skill is a capable developer or domain practitioner who
+has **little or no exposure to Fully Homomorphic Encryption (FHE)**. Calibrate
+the conversation accordingly. This governs *user-facing dialog and report prose*;
+it does not lower the technical precision of the design reasoning, the code, or
+the reference material.
+
+1. **Keep the FHE register plain by default.** Assume no FHE background. In
+   conversation, explain what you are doing in everyday terms and keep deep FHE
+   jargon out of it — terms like bootstrapping, modulus/level budget, rescaling,
+   ring dimension, RNS limbs, relinearization, Chebyshev approximation, SIMD slot
+   packing, decode/noise budget. When such a concept genuinely must appear, give
+   a one-line plain-language gloss the first time (e.g. "bootstrapping — a
+   refresh step that restores headroom for more computation"). Only shift into
+   fluent FHE terminology if the user demonstrates FHE fluency or explicitly asks
+   for the depth. Reserve the full vocabulary for code, references, and the
+   evidence tables in reports — not the back-and-forth.
+
+2. **Spell out every acronym on first use.** In conversation and in report
+   prose, write the expansion the first time and the acronym thereafter —
+   "Fully Homomorphic Encryption (FHE)", "convolutional neural network (CNN)",
+   "remaining useful life (RUL)", "multi-layer perceptron (MLP)", and so on. This
+   applies to **both** FHE-domain acronyms (FHE, CKKS, BFV, BGV, SIMD, RNS) and
+   application-domain acronyms. Do this consistently; do not assume any acronym
+   is common knowledge.
+
+3. **Ask about application-domain familiarity early, and adapt to it.** FHE
+   familiarity is assumed low (rule 1) and is *not* worth asking about. But
+   *application*-domain familiarity varies widely and is worth one question. At
+   the start of Stage 1 — once you know the workload's domain (from the reference
+   package or the user's problem statement) — ask the user to self-rate their
+   familiarity with **that specific domain**, e.g.:
+
+   > How familiar are you with <domain, e.g. "predictive-maintenance / remaining-useful-life modeling">?
+   > (a) New to it — please explain domain terms as we go
+   > (b) Some working knowledge
+   > (c) Expert — use the domain's terminology freely
+
+   Record the answer and calibrate *application-domain* terminology to it: for
+   (a), introduce domain terms in plain language and avoid unexplained jargon;
+   for (c), use domain terms freely. If the user doesn't answer, default to (a).
+   This axis is independent of the FHE register, which stays plain regardless.
 
 ## Attribution notice on every generated artifact
 
@@ -122,7 +166,12 @@ and troubleshooting).
 
 ## Stage 1: Establish the Privacy Model
 
-Before thinking about circuits, parameters, or code, work with the user to
+**First, ask the application-domain familiarity question** (see "Communicating
+with the user," rule 3) and record the answer — it sets how you use
+application-domain terminology for the rest of the engagement. Keep the FHE
+register plain regardless.
+
+Then, before thinking about circuits, parameters, or code, work with the user to
 answer five questions:
 
 1. **Who are the parties, what do they hold, and who are the adversaries?**
