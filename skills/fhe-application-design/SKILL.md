@@ -17,7 +17,7 @@ license: Apache-2.0
 compatibility: OpenFHE (C++ or Python); Niobium nb FHE DSL (niobium-client)
 metadata:
   author: Niobium Microsystems
-  version: 0.8.1
+  version: 0.9.0
 ---
 
 # FHE Application Design ("FHEanna")
@@ -1120,6 +1120,38 @@ runtime, not circuit (see the bootstrapping section's probes).
 A validated, decode-safe twin is the primary design deliverable. Stage 8 turns it
 into encrypted code.
 
+### Write the design dossier now — at the gate, before the encrypted build
+
+Because the validated twin *is* the design, most of the Stage 9 close-out
+documentation should be written **here**, at the Stage 7 gate, not deferred until
+after the expensive encrypted build. Everything design-derived is already known;
+only the *measured* encryption results are not. Author now:
+
+- **The protocol / threat-model document — in full.** Parties, message flow,
+  what each party can and cannot learn, intentional and incidental leakage, the
+  output-integrity mechanism, and filter coverage (reject/fallback rates are the
+  twin's) are all fixed by Stages 1, 5, and 6. None of it depends on the
+  encrypted run.
+- **The design narrative — in full but for a short addendum.** Privacy model,
+  feasibility pivot, scheme/circuit/parameter decisions, the dead ends explored,
+  and the twin-gate verdict are all settled. Leave one open slot for an
+  "implementation notes" addendum in case Stage 8 forces a change (a depth bump
+  for decode headroom, a twin-fidelity fix, and so on).
+- **The results report — skeleton plus the two plaintext ledger rows.** Write
+  *reference → ground truth* (task quality) and *twin → reference* (polynomial
+  cost) now — both are plaintext facts. Fill the parameter table and the Stage 6
+  *size estimates*. Draft the "How we know it passes" narrative except the
+  encrypted-layer numbers. Leave the *FHE → twin* row, the measured resource
+  profile, and the final PASS as clearly-marked blanks.
+- **The run README — commands and structure**, minus the measured
+  "expected output" block.
+
+Only three things are genuinely unknown until Stage 8's `run_test`: the measured
+FHE-vs-twin error (against the noise tolerance recorded just above), the measured
+deployment numbers (peak server RSS, timings, actual boundary sizes vs. the
+estimates), and therefore the final PASS. Stage 9 then becomes *filling those
+blanks and confirming the pre-written docs*, not writing from scratch.
+
 ## Stage 8: Implement the FHE Program
 
 Only after the twin is validated and approved. Implement in **OpenFHE C++** —
@@ -1384,13 +1416,18 @@ As a final design step, document the full protocol and its security properties:
 ### Close-out deliverables
 
 Ship three documents with the application — part of the deliverable, not
-optional extras:
+optional extras. **Most of them were already drafted at the Stage 7 gate** (see
+"Write the design dossier now"); Stage 9 *finalizes* them and adds the thin
+**results addendum** — the three things that needed the encrypted run: the
+FHE-vs-twin error, the measured deployment numbers, and the final PASS. Do not
+rewrite from scratch here.
 
 1. **A brief narrative report** of what happened: the gate verdicts, the
    decisions taken at each stage (including the user's choices), the dead ends
    explored and why they were abandoned, and what the final design is. This is
    the document a colleague reads to understand *why* the application looks
-   the way it does.
+   the way it does. *(Drafted in full at the Stage 7 gate; here add only an
+   "implementation notes" addendum if Stage 8 forced a change.)*
 
 2. **A results report** comparing the three versions of the application with
    task-appropriate metrics (see Stage 3 — for rare-class workloads that means
@@ -1417,14 +1454,20 @@ optional extras:
    and (e) the honest caveat separating fidelity-to-the-model from
    quality-of-the-model, so nobody reads "matches the reference" as "predicts
    the world well." This section is what stakeholders actually read; the
-   tables below it are the evidence.
+   tables below it are the evidence. *(Skeleton + the reference→ground-truth and
+   twin→reference rows + parameters + Stage-6 size estimates + parts a/c-polynomial/e
+   of "How we know it passes" are drafted at the gate. The **results addendum**
+   fills here: the FHE→twin row (measured error vs the recorded tolerance), the
+   measured deployment numbers (peak server RSS, timings, actual boundary sizes),
+   part d "not a lucky run," and the final PASS.)*
 
 3. **A run README** in the application directory: prerequisites (Docker + the
    FHE-dev image), how to regenerate any non-committed inputs, the
    build+run_test command with expected output and resource needs, and how to
    run the two-process demo including the two-host variant. A recipient with
    Docker and the repository should need nothing else to reproduce the
-   encrypted run.
+   encrypted run. *(Commands and structure drafted at the gate; here fill the
+   "expected output" block with the measured timings, peak RSS, and error.)*
 
 This documentation serves both as a security specification and as a guide
 for anyone reviewing or extending the application.
