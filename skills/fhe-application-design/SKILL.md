@@ -17,7 +17,7 @@ license: Apache-2.0
 compatibility: OpenFHE (C++ or Python); Niobium nb FHE DSL (niobium-client)
 metadata:
   author: Niobium Microsystems
-  version: 0.10.0
+  version: 0.11.0
 ---
 
 # FHE Application Design ("FHEanna")
@@ -134,13 +134,15 @@ passes.
 
 The setup is deliberately small because the work runs at two speeds:
 
-- **The twin tier (Stages 1–7) needs nothing installed.** The design, the
+- **The light tier (Stages 1–7) — always run it yourself.** The design, the
   parameter sweep, and the twin-vs-reference validation are pure Python (numpy)
-  and run in Claude's own environment as you converse.
-- **The FHE tier (Stage 8) needs the container.** Building and running the
-  encrypted OpenFHE app is too heavy for that sandbox, so it happens in a
-  prebuilt **FHE-dev** image on the user's machine. You **pull** this image —
-  you never build OpenFHE from source.
+  and run in your own environment as you converse.
+- **The heavy, containerized tier (Stage 8, and the optional Fog variant) — the
+  prebuilt FHE-dev image.** Building and running the encrypted OpenFHE app is too
+  heavy for a light environment, so it happens in a prebuilt **FHE-dev** image.
+  You **pull** this image — you never build OpenFHE from source. *Who* runs the
+  container depends on your execution mode (below), not on which product the user
+  is in.
 
 Three one-time steps:
 
@@ -154,14 +156,36 @@ Three one-time steps:
    and runs a trivial OpenFHE program and a numpy stub; a final `SMOKE OK` means
    the environment is ready.
 
-At Stage 8 the container is invoked with the project folder bind-mounted
-(`-v "$PWD":/work`), so it compiles the source Claude wrote and writes results
-back into the same folder. In Cowork, Claude authors each `docker run` command
-and the user runs it; in Claude Code, Claude runs it directly. Either way the
-container is a plain build box — Claude, not the container, is doing the design.
+**Determine your execution mode at this step — probe, don't assume.** Try to run
+the smoke test in *your own shell*. Two outcomes:
+
+- **self-run** — the command executes and you can read its output (a shell with
+  Docker access, e.g. Claude Code on a Docker-capable machine). Then you run the
+  containerized tier yourself throughout: execute the build, `run_test`, the
+  two-process demo, and any Fog validation; read the output; and iterate on build
+  errors autonomously — surfacing results and decisions, not each command. Do not
+  ask the user to run or paste things you can run yourself, and do not gate each
+  step on a user turn.
+- **hand-off** — your shell cannot reach Docker (the Cowork sandbox, or any
+  Docker-less environment). Then author each exact command, ask the user to run
+  it, and iterate on what they paste back (the careful one-command-at-a-time
+  rhythm).
+
+Record the mode once, and let the user override it in a sentence ("I'm in Claude
+Code — run things yourself" / "just give me the commands"). **Emit the same
+copy-pasteable commands in either mode** — only *who executes* changes. At Stage 8
+the container is invoked with the project folder bind-mounted (`-v "$PWD":/work`),
+compiling the source you wrote and writing results back into the same folder; the
+container is a plain build box — you, not the container, do the design.
+
+**A capacity limit is separate from execution mode.** Even in self-run mode a
+particular step may exceed the local machine (e.g. replaying a deep bootstrapped
+circuit that needs a large-memory host). That is a *capacity* hand-off of one
+step to a bigger box or the compilation service — decided on resources, not on
+whether you can run Docker at all.
 
 **For detailed guidance:** Read `references/environment-setup.md` (prerequisites,
-the mounted-folder data bus, the Cowork vs. Claude Code loop, torch references,
+the mounted-folder data bus, the self-run vs. hand-off loop, torch references,
 and troubleshooting).
 
 ## Stage 1: Establish the Privacy Model
@@ -1628,3 +1652,13 @@ Throughout the design process, keep these principles in mind:
 - **Iterate.** The first working encrypted version is a milestone, not the
   finish line. Real-world performance comes from iterating on the balance
   between depth, precision, parallelism, and parameter size.
+
+- **Execution mode: probe, don't assume.** Whether you run the containerized
+  build yourself or hand commands to the user is a *capability* of the session,
+  not a product name. Detect it at Stage 0 by trying the smoke test in your own
+  shell: if it runs, you are **self-run** — execute the build/`run_test`/demo/Fog
+  steps yourself and iterate autonomously, without asking the user to run or
+  paste what you can do; if it can't reach Docker, you are **hand-off** — author
+  the exact commands and iterate on what the user pastes. Emit the same commands
+  either way. A per-step *capacity* hand-off (a run too big for the local
+  machine) is a separate decision, made on resources.

@@ -99,18 +99,32 @@ land back in your folder. Claude then reads those outputs and iterates. Because
 the twin was already validated in Stage 7, this loop should converge in only a
 few iterations.
 
-## Which surface you drive
+## Execution mode: self-run vs hand-off (probe, don't assume)
 
-**Cowork (recommended, default).** Claude runs in a sandbox that cannot reach
-your Mac's Docker, so *you* run the container commands — but you never write
-them: Claude authors each `docker run` (usually a single one-shot build+run
-command) and you paste it into your terminal, then report the result or let
-Claude read the output files from the shared folder.
+The container commands are identical no matter who runs them; the only variable
+is **whether the agent can execute them in its own shell**. Detect that at
+Stage 0 by trying the smoke test in the agent's shell, and behave accordingly —
+this is a session *capability*, not a product name.
 
-**Claude Code (optional, tight loop).** If you run Claude Code in a terminal on
-the same machine, Claude's shell *is* your shell, so it runs the `docker run`
-commands directly — a tighter compile/see-error/fix loop with no handoff. Same
-image, same commands; the only difference is who presses enter.
+**Hand-off mode.** The agent's shell cannot reach Docker (the Cowork sandbox is
+the common case, but any Docker-less environment qualifies). The agent authors
+each command (usually a single one-shot build+run) and *you* paste it into your
+terminal, then report the result or let the agent read the output files from the
+shared folder. This is the careful one-command-at-a-time rhythm.
+
+**Self-run mode.** The agent's shell *is* a Docker-capable shell (e.g. Claude
+Code in a terminal on the same machine). The agent runs the `docker run` /
+`run_test` / demo / Fog commands directly and iterates on build errors itself — a
+tight compile/see-error/fix loop with no hand-off, surfacing results and
+decisions rather than each command. It should not ask you to run or paste what it
+can do itself.
+
+Same image, same commands; the only difference is who presses enter. You can
+override the detected mode in a sentence ("run it yourself" / "just give me the
+commands"). Note a separate axis: even in self-run mode, a single step whose
+resource needs exceed the local machine (e.g. replaying a deep bootstrapped
+circuit) is handed off *on capacity* to a bigger host or the compilation
+service — that is about memory/compute, not about who can run Docker.
 
 ## When the reference needs torch
 
