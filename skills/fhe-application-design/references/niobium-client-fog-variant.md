@@ -1,6 +1,6 @@
 # Emitting a niobium-client (Fog) variant of a finished OpenFHE app
 
-This is an **optional Stage 8 add-on**. It takes an application that already
+This is an **optional Stage 10 add-on** (offered after the CPU app is built, validated, and documented). It takes an application that already
 works the normal way — the four OpenFHE programs (keygen / encrypt / server /
 decrypt), `run_test` green against the faithful twin, and the two-process demo
 standing — and produces a second build of the *same* application that runs

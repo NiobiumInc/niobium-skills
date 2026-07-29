@@ -137,7 +137,7 @@ The setup is deliberately small because the work runs at two speeds:
 - **The light tier (Stages 1–7) — always run it yourself.** The design, the
   parameter sweep, and the twin-vs-reference validation are pure Python (numpy)
   and run in your own environment as you converse.
-- **The heavy, containerized tier (Stage 8, and the optional Fog variant) — the
+- **The heavy, containerized tier (Stage 8, and the optional Stage 10 Fog variant) — the
   prebuilt FHE-dev image.** Building and running the encrypted OpenFHE app is too
   heavy for a light environment, so it happens in a prebuilt **FHE-dev** image.
   You **pull** this image — you never build OpenFHE from source. *Who* runs the
@@ -1442,44 +1442,6 @@ extra.
 
 **For a detailed walkthrough:** Read `references/building-your-first-fhe-application.md`
 
-### Optional: emit a niobium-client (Fog) variant
-
-Once the four-program app is **built and validated** — `run_test` green against
-the twin and the two-process demo standing — you may optionally emit a second
-build of the *same* application that runs through the **Niobium Mistic / Fog**
-path: niobium-client records the computation as a FHETCH Polynomial IR trace via
-its instrumented OpenFHE, replays it in a local simulator to validate, and can
-submit it to the Niobium compilation service for hardware deployment. This is a
-deployment-target variant of a known-good design, **not** a design path — offer
-it only after validation, and only if the user chooses it.
-
-Key rules:
-
-- **Location.** Emit it as a parallel directory in the *application* repo —
-  `fhe-design/app-fog/` next to `fhe-design/app/` (mirroring the `app-gpu/`
-  convention). Never write into the niobium-client repository; it is only a
-  build-time dependency.
-- **Instrument, don't redesign.** The Fog server runs the identical circuit —
-  same weights, parameters, packing — bracketed with `niobium::compiler()`
-  record/replay. Make this structural: factor the circuit body into a shared
-  `run_circuit(...)` in `common.hpp` that *both* the plain server and the Fog
-  server call, so the math cannot drift. Only the **server** is instrumented
-  (it is the compute); keygen/encrypt/decrypt are reused as the client side.
-- **Verify to the same bar.** The Fog replay must reproduce the twin within the
-  encryption-noise tolerance with zero decision flips (the `run_test` criterion),
-  plus a free bit-identical "simulator vs OpenFHE" ring-level check.
-- **Build** links niobium-client's `niobium_fhetch` (graft `app-fog/` into a
-  niobium-client checkout's `examples/` and `make build-release`); pass
-  `--no-ring-dim-check` for N = 2^16, and confirm the instrumented OpenFHE
-  version matches the app's (the FHE-dev image line).
-- **Distinct from the `nb` DSL path.** The DSL rewrites the computation and
-  generates OpenFHE; this add-on instead *reuses the finished OpenFHE app*
-  through niobium-client's instrumented-OpenFHE entry point. Do not conflate them.
-
-**For the full how-to:** Read `references/niobium-client-fog-variant.md` (layout,
-the exact recording pattern, CMake, the graft build recipe, verification, and
-trace submission).
-
 ## Stage 9: Specify the Protocol and Threat Model
 
 As a final design step, document the full protocol and its security properties:
@@ -1572,6 +1534,70 @@ for anyone reviewing or extending the application.
 `references/example-set-membership.md`, which includes a complete threat model
 and security analysis.
 
+## Stage 10: Optional Fog Deployment Variant
+
+The CPU OpenFHE application is now built, validated (`run_test` green against the
+twin, the two-process demo standing), **and fully documented** (Stage 9). That is
+a complete, self-contained deliverable. This is the point — and the only point —
+to consider an additional deployment target, because the canonical design is now
+frozen and described.
+
+**Ask the user, as a concrete choice — do not skip it silently, and do not emit
+anything without an explicit yes.** Put it plainly: the core CPU deliverable is
+finished and documented; would they like a second build of the *same* validated
+design that runs through the **Niobium Mistic / Fog** path? Offer exactly two
+answers — **emit the Fog variant**, or **stop here** — and act on the reply.
+Proceed into the steps below only on an explicit yes.
+
+The Fog variant is a **deployment-target build of a known-good design, not a new
+design path.** niobium-client records the identical computation as a FHETCH
+Polynomial IR trace through its instrumented OpenFHE, replays that trace in a
+**local simulator to validate it**, and can then submit it to the Niobium
+compilation service for hardware deployment. No circuit, weights, parameters, or
+packing change.
+
+### Emit the variant
+
+- **Location.** Emit it as a parallel directory in the *application* repo —
+  `fhe-design/app-fog/` next to `fhe-design/app/` (mirroring the `app-gpu/`
+  convention). Never write into the niobium-client repository; it is only a
+  build-time dependency.
+- **Instrument, don't redesign.** The Fog server runs the identical circuit —
+  same weights, parameters, packing — bracketed with `niobium::compiler()`
+  record/replay. Make this structural: factor the circuit body into a shared
+  `run_circuit(...)` in `common.hpp` that *both* the plain server and the Fog
+  server call, so the math cannot drift. Only the **server** is instrumented
+  (it is the compute); keygen/encrypt/decrypt are reused unchanged as the client
+  side.
+- **Build.** Link niobium-client's `niobium_fhetch` (graft `app-fog/` into a
+  niobium-client checkout's `examples/` and `make build-release`); pass
+  `--no-ring-dim-check` for N = 2^16, and confirm the instrumented OpenFHE
+  version matches the app's (the FHE-dev image line).
+- **Distinct from the `nb` DSL path.** The DSL rewrites the computation and
+  generates OpenFHE; this add-on instead *reuses the finished OpenFHE app*
+  through niobium-client's instrumented-OpenFHE entry point. Do not conflate them.
+
+### Validate by simulation
+
+The Fog variant is verified the same way the CPU app was — against the faithful
+twin — but through niobium-client's **local simulator** rather than an encrypted
+run, so it is fast and needs no new ground truth:
+
+- **Replay to the same bar.** The simulator replay of the recorded trace must
+  reproduce the twin within the **encryption-noise tolerance recorded in Stage 7,
+  with zero decision flips** — the identical `run_test` pass criterion the CPU
+  build had to clear.
+- **Ring-level identity check (free).** The record step also yields a
+  bit-identical "simulator vs OpenFHE" ring-level comparison: the instrumented
+  run and the plain OpenFHE run must agree exactly at the ring level, confirming
+  the trace faithfully captured the computation before it ever reaches hardware.
+- Report both results as an addendum alongside the Stage 9 results report — the
+  Fog row is "same design, validated on the Mistic path by simulation."
+
+**For the full how-to:** Read `references/niobium-client-fog-variant.md` (layout,
+the exact `niobium::compiler()` recording pattern, CMake, the graft build recipe,
+simulation verification, and trace submission).
+
 ## Reference Files
 
 Read these files as needed during the design process. Each file is
@@ -1585,7 +1611,7 @@ self-contained and can be read independently.
 | `references/fhe-scheme-selection.md` | Stage 4: choosing between CKKS, BFV, and BGV |
 | `references/building-your-first-fhe-application.md` | Stages 3, 6, 8: the development checklist from plaintext through implementation |
 | `references/implementing-with-nb-dsl.md` | Stage 8 (optional DSL path): implementing the design in the `nb` FHE DSL (niobium-client) — stage-to-construct mapping, workflow, pitfalls, limitations |
-| `references/niobium-client-fog-variant.md` | Stage 8 (optional Fog variant): emitting a niobium-client / Mistic build of a validated OpenFHE app — `app-fog/` layout, the `niobium::compiler()` record/replay pattern, CMake, build recipe, verification |
+| `references/niobium-client-fog-variant.md` | Stage 10 (optional Fog variant): emitting a niobium-client / Mistic build of a validated OpenFHE app — `app-fog/` layout, the `niobium::compiler()` record/replay pattern, CMake, graft build recipe, simulation verification |
 | `references/fhe-application-dialogue.md` | Stages 3–8: a worked example showing all steps for a real anomaly detection application |
 | `references/example-set-membership.md` | Stages 5–9: complete CKKS design spec and implementation (squared distance, iterated squaring, column-major packing, threat model) |
 | `references/example-fetch-by-similarity.md` | Stage 5: advanced CKKS patterns (Chebyshev approximation, slot replication, running sums, output compression) |
