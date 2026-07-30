@@ -1,47 +1,45 @@
-# Emitting a niobium-client (Fog) variant of a finished OpenFHE app
+# The niobium-client (Fog) deployment of a finished OpenFHE app
 
-This is an **optional Stage 10 add-on** (offered after the CPU app is built, validated, and documented). It takes an application that already
-works the normal way — the four OpenFHE programs (keygen / encrypt / server /
-decrypt), `run_test` green against the faithful twin, and the two-process demo
-standing — and produces a second build of the *same* application that runs
-through the **Niobium Mistic / Fog** path: the computation is recorded as a
-FHETCH Polynomial IR trace (`.fhetch`) via niobium-client's instrumented
-OpenFHE, replayed in the local simulator for validation, and (optionally)
-submitted to the Niobium compilation service for deployment to hardware.
+This is the **Stage 10** run, done after the app is built and its CPU run is
+validated and documented (the four programs keygen/encrypt/server/decrypt,
+`run_test --cpu` green against the faithful twin, the two-process demo standing).
+The *same* binary reaches the Fog. Recording the computation with
+`niobium::compiler()` produces a FHETCH Polynomial IR trace (`.fhetch`); the
+server has three run modes over it: `--cpu` runs plain OpenFHE (no trace);
+`--sim` records the trace and reconstructs the result through the local
+`fhetch_sim`; and the default records and dispatches the trace to the Niobium
+Fog. `--sim` is the required local validation; the default needs a Fog API key.
 
-## When to offer it
+## When to run it
 
-Only after the CPU app is **built and validated**. This is a deployment-target
-variant of a known-good design, not a design path. Never design straight to the
-Fog path, and never offer it before `run_test` passes. It is **opt-in**: present
-the option to the user and emit it only if they choose it.
+After the app's CPU run is **validated** (`run_test --cpu` green). This is a
+deployment mode of a known-good design, not a design path. Never design straight
+to the Fog path, and never run the Fog mode before the CPU run passes.
 
-## Where it goes
+## Where it lives
 
-A parallel directory in the **application repo**, alongside the CPU app:
+One directory in the **application repo** holds the whole app:
 
 ```
 fhe-design/
-├── app/          # the validated four-program OpenFHE app (unchanged)
-└── app-fog/      # the niobium-client variant (this add-on)
+├── app/          # the four-program app (keygen/encrypt/server/decrypt + run_test)
+└── common.hpp    # the shared run_circuit() both run modes call
 ```
 
-Never write into the niobium-client repository. `app-fog/` is emitted into the
-application repo you are working in; niobium-client is only a build-time
-dependency (see Build below). This mirrors the `app-gpu/` convention used for
-the GPU/FIDESlib variant.
+Keep the source in your repo; the FHE-dev container is only a build-and-run
+dependency (see Build below). There is no separate Fog directory: the default run
+mode is the Fog path.
 
 ## The governing rule: instrument, don't redesign
 
-The Fog server must run the **identical circuit** as the validated
-`app/server.cpp` — same weights, same parameters, same packing. The only
-additions are the `niobium::compiler()` session calls that bracket the
-computation. To make that guarantee structural rather than a matter of
-discipline, **factor the circuit body into a shared function** and have both
-servers call it:
+Both run modes must execute the **identical circuit** — same weights, parameters,
+packing. The only difference is that the default (Fog) mode brackets the
+computation with `niobium::compiler()` session calls. To make that guarantee
+structural rather than a matter of discipline, **factor the circuit body into a
+shared function** the server calls in both modes:
 
 ```cpp
-// common.hpp (shared by app/ and app-fog/)
+// common.hpp
 inline Ciphertext<DCRTPoly> run_circuit(
         CryptoContext<DCRTPoly>& cc, const Model& m,
         const std::vector<Ciphertext<DCRTPoly>>& x) {
@@ -50,10 +48,9 @@ inline Ciphertext<DCRTPoly> run_circuit(
 }
 ```
 
-The plain server calls `run_circuit(...)` directly; the Fog server calls the
-same function between `start()` and `stop()`. The math cannot drift because
-there is only one copy of it. (This retires the divergent-parallel-source pain
-seen in the GPU pilot.)
+On `--cpu` the server calls `run_circuit(...)` directly and serializes the OpenFHE
+result; in the default mode it calls the same function between `start()` and
+`stop()`. The math cannot drift because there is only one copy of it.
 
 ## Only the server is instrumented
 
@@ -64,7 +61,8 @@ are reused essentially unchanged (packaged as the example's `client` and
 
 ## The recording pattern
 
-The instrumented server follows niobium-client's example convention exactly:
+When recording (`--sim` or the default Fog mode), the server follows
+niobium-client's example convention:
 
 ```cpp
 #include "openfhe.h"
@@ -78,7 +76,7 @@ niobium::Compiler::CacheParameters params;
 params.push_back({"workload", "<app>"});
 niobium::compiler().cache_parameters(params);
 
-// load context, input ciphertexts, eval keys, model (as in app/server.cpp)
+// load context, input ciphertexts, eval keys, model (as in the --cpu path)
 niobium::compiler().capture_crypto_context(cc);
 for (each input ct) niobium::compiler().tag_input("<name>", ct);
 niobium::compiler().tag_keys(cc);
@@ -89,7 +87,7 @@ if (!niobium::compiler().is_cache_valid()) {
     niobium::compiler().probe("<output>", out);
     niobium::compiler().stop();                     // writes .fhetch + fhetch_replay.json
 }
-niobium::compiler().replay();                       // drives fhetch_sim in-process
+niobium::compiler().replay();                       // --sim: local fhetch_sim; default: the Fog
 Ciphertext<DCRTPoly> ct_result;
 niobium::compiler().result(cc, "<output>", ct_result);
 // serialize ct_result for decrypt
@@ -98,47 +96,40 @@ niobium::compiler().result(cc, "<output>", ct_result);
 `result()` also lets you diff the simulator output against OpenFHE's at the ring
 level — a free "bit-identical" check (see Verification).
 
-## Build (approach A — proven default)
+## Build and run (in the FHE-dev container)
 
-`app-fog/` links niobium-client's `niobium_fhetch` target, which lives in the
-niobium-client build. The simplest supported path is to **graft `app-fog/` into
-a niobium-client checkout** and build with its toolchain:
+The app builds against the SDK installed in the FHE-dev image via
+`find_package(NiobiumFhetch)`, and runs through the `run-in-container.sh` wrapper
+and `run_test.sh` that Stage 8 generates (the wrapper mounts the project at
+`/work`, and `~/.fog` when present). Build once, then run the required local
+validation (`--sim`):
 
-1. Copy or symlink `app-fog/` into `<niobium-client>/examples/diabetes/` (any
-   example name), and add a `client`/`server`/`decrypt` triple to
-   `examples/CMakeLists.txt`:
-   ```cmake
-   add_executable(<app>_client  <dir>/client.cpp)
-   add_executable(<app>_server  <dir>/server.cpp)
-   add_executable(<app>_decrypt <dir>/decrypt.cpp)
-   foreach(p <app>_client <app>_server <app>_decrypt)
-       target_link_libraries(${p} PRIVATE niobium_fhetch)
-       set_openfhe_rpath(${p})
-   endforeach()
-   ```
-2. Build the client + examples: `make sync` (first time) then `make build-release`.
-3. Run from the niobium-client repo root:
-   ```
-   build/examples/<app>_client  <keys> <app-fog>/data
-   build/examples/<app>_server  <keys> <app-fog>/data --no-ring-dim-check
-   build/examples/<app>_decrypt <keys> <app-fog>/data
-   ```
+```bash
+./run-in-container.sh "cmake -S . -B build \
+    -DCMAKE_PREFIX_PATH='/opt/niobium-client/vendor/lib/niobium-client;/opt/niobium-client/vendor/lib/openfhe' \
+    && cmake --build build -j"
+./run-in-container.sh "./run_test.sh --sim"      # record -> fhetch_sim -> compare vs twin
+```
 
-`--no-ring-dim-check` is required whenever N differs from niobium-client's toy
-default (production designs use N = 2^16).
+`run_test.sh` passes `--no-ring-dim-check` to the server for N = 2^16; `--cpu`
+runs the plain OpenFHE path (the Stage 8 CPU gate). The image is one coherent
+build, so the instrumented OpenFHE and `libnbfhetch` versions always match.
 
-**Version parity:** niobium-client's instrumented OpenFHE must be the same
-OpenFHE version the app targets (the FHE-dev image line, currently v1.5.1 /
-OpenFHE 1.5.1). Confirm before building.
+**Deploying to the Fog (`--fog`).** The default (Fog) mode dispatches the trace to
+the Niobium Fog and needs an API key; the server preflights for one
+(`~/.fog/credentials` via `fog login`, or `FOG_API_TOKEN`) and prints a friendly
+sign-in / sign-up pointer if it is missing, with `--sim` as the account-free
+alternative. Mint a key once, then deploy through the wrapper (which mounts
+`~/.fog`); `run_test.sh --fog` runs the server step under `fog submit`:
 
-*(Approach B — a standalone `app-fog/CMakeLists.txt` that builds against an
-installed niobium-client via `find_package`/`find_library` — is cleaner but
-depends on niobium-client exposing an install/export target; use it only once
-that is confirmed.)*
+```bash
+docker run --rm -it -v "$HOME/.fog":/root/.fog ghcr.io/niobiuminc/fhe-dev:v0.13.0 fog login
+./run-in-container.sh "./run_test.sh --fog"
+```
 
 ## Verification gate
 
-The Fog variant must clear the **same** bar as the CPU app, plus a free extra:
+The Fog build must clear the **same** bar as the CPU app, plus a free extra:
 
 - **Fog-replay vs the faithful twin**: max output error in the encryption-noise
   band and **0 decision flips** (identical criterion to `run_test`). The
@@ -161,7 +152,7 @@ The Fog variant must clear the **same** bar as the CPU app, plus a free extra:
   per the transport docs; nothing in the circuit changes.
 - **Run artifacts are not source.** The key directory and the
   `*_server_workload_*/` trace directory are regenerated every run — `.gitignore`
-  them; commit only `app-fog/` sources + `data/`.
+  them; commit only `app/` sources + `data/`.
 - **This is not the DSL path.** The optional `nb` DSL (see
   `implementing-with-nb-dsl.md`) is a *different* front door that rewrites the
   computation in the DSL and generates OpenFHE. This add-on instead **reuses the
@@ -205,5 +196,5 @@ the things that actually bit:
   N = 2¹⁶. These match niobium-client's own `bootstrap` example.
 
 - **Run artifacts are not source.** The key dirs and `*_workload_*/` trace dirs
-  regenerate each run — `.gitignore` them; commit only `app-fog/` sources + any
+  regenerate each run — `.gitignore` them; commit only `app/` sources + any
   small data subset.

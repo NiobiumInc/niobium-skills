@@ -10,11 +10,11 @@ Copilot, Windsurf, and more.
 
 ### [`fhe-application-design`](skills/fhe-application-design/) — design FHE applications (a.k.a. **FHEanna**, "fee-AH-na" · patent pending)
 
-A ten-stage methodology (Stages 0–9) for designing and building Fully Homomorphic
+An eleven-stage methodology (Stages 0–10) for designing and building Fully Homomorphic
 Encryption (FHE) applications with OpenFHE (optional Niobium DSL path) — from build
 environment and privacy model through feasibility, scheme selection, circuit design,
-parameter selection, the faithful twin, encrypted implementation, and protocol
-specification. Use it whenever you need to compute on encrypted data, assess FHE
+parameter selection, the faithful twin, encrypted implementation, protocol
+specification, and a Niobium Fog deployment. Use it whenever you need to compute on encrypted data, assess FHE
 feasibility, or structure a client–server protocol for encrypted computation.
 
 ```bash
@@ -26,13 +26,15 @@ npx skills add NiobiumInc/niobium-skills --skill fhe-application-design
 > Cowork's plugin UI instead: see [Claude Cowork](#claude-cowork) below.
 
 **Prerequisites (beyond the skill itself):** building and running the encrypted
-application (Stage 8) happens in the prebuilt **FHE-dev container** — you never build
-OpenFHE from source. You need [Docker](https://www.docker.com/products/docker-desktop/)
-and a one-time pull of the image (several GB):
+application (Stages 8 and 10) uses the **FHE-dev container**, which ships
+Niobium's instrumented OpenFHE fork + `libnbfhetch` (built from
+[niobium-client](https://github.com/NiobiumInc/niobium-client)). You need Docker;
+the skill's Dockerfile builds the image, and the first build compiles OpenFHE
+from source:
 
 ```bash
-docker pull ghcr.io/niobiuminc/fhe-dev:v0.7.0
-docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.7.0 fhe-smoke-test   # ends with SMOKE OK
+docker build -t ghcr.io/niobiuminc/fhe-dev:v0.13.0 skills/fhe-application-design/environment
+docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.13.0 make test-release   # smoke test
 ```
 
 The skill walks you through this as its Stage 0, so you can also just start a
@@ -72,7 +74,7 @@ to Cowork). Add this repo as a plugin marketplace, then install the plugin:
 3. Click **Browse plugins**, find **fhe-application-design**, and click **Install**.
 4. In a task, type `/` (or the **+** button) to invoke the **FHEanna** skill.
 
-The FHE-dev Docker image (Stage 0) is still a separate `docker pull` — see
+Stage 0's FHE-dev container is a separate setup step — see
 Prerequisites above.
 
 ### GitHub CLI

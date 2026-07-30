@@ -17,7 +17,7 @@ license: Apache-2.0
 compatibility: OpenFHE (C++ or Python); Niobium nb FHE DSL (niobium-client)
 metadata:
   author: Niobium
-  version: 0.12.0
+  version: 0.13.0
 ---
 
 # FHE Application Design ("FHEanna")
@@ -132,29 +132,31 @@ toolchain discovered three stages into a design is the most avoidable kind of
 frustration. Treat it as a gate: do not start Stage 1 until the smoke test
 passes.
 
-The setup is deliberately small because the work runs at two speeds:
+The work runs at two speeds:
 
 - **The light tier (Stages 1–7) — always run it yourself.** The design, the
   parameter sweep, and the twin-vs-reference validation are pure Python (numpy)
   and run in your own environment as you converse.
-- **The heavy, containerized tier (Stage 8, and the optional Stage 10 Fog variant) — the
-  prebuilt FHE-dev image.** Building and running the encrypted OpenFHE app is too
-  heavy for a light environment, so it happens in a prebuilt **FHE-dev** image.
-  You **pull** this image — you never build OpenFHE from source. *Who* runs the
-  container depends on your execution mode (below), not on which product the user
-  is in.
+- **The heavy, containerized tier (Stages 8 and 10) — the FHE-dev image.**
+  Building and running the encrypted OpenFHE programs is too heavy for a light
+  environment, so it happens in the **FHE-dev** image, built from the skill's
+  Dockerfile. The image ships Niobium's instrumented OpenFHE fork and
+  `libnbfhetch`, so it runs the programs on CPU and generates the FHETCH trace the
+  Fog runs. *Who* runs the container depends on your execution mode (below), not
+  on which product the user is in.
 
 Three one-time steps:
 
 1. Install Docker (Docker Desktop on macOS/Windows) if it isn't already present
-   — the only unavoidable local install, and far easier than building OpenFHE.
-2. Pull the image: `docker pull ghcr.io/niobiuminc/fhe-dev:v0.7.0` — the
-   pinned release this skill version was validated against (`:latest` tracks
-   the newest release; prefer the pin for reproducibility).
+   — the only unavoidable local install.
+2. Build the image from the skill's `environment/` directory:
+   `docker build -t ghcr.io/niobiuminc/fhe-dev:v0.13.0 environment`. The first
+   build clones niobium-client and compiles the instrumented OpenFHE from source,
+   which is the one heavy step; allow time for it.
 3. Run the smoke test:
-   `docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.7.0 fhe-smoke-test`. It builds
-   and runs a trivial OpenFHE program and a numpy stub; a final `SMOKE OK` means
-   the environment is ready.
+   `docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.13.0 make test-release`. It
+   takes the bundled examples through record, simulate, and decrypt; a green
+   sweep means the environment is ready.
 
 **Determine your execution mode at this step — probe, don't assume.** Try to run
 the smoke test in *your own shell*. Two outcomes:
@@ -179,7 +181,7 @@ compiling the source you wrote and writing results back into the same folder; th
 container is a plain build box — you, not the container, do the design.
 
 **A capacity limit is separate from execution mode.** Even in self-run mode a
-particular step may exceed the local machine (e.g. replaying a deep bootstrapped
+particular step may exceed the local machine (e.g. running a deep bootstrapped
 circuit that needs a large-memory host). That is a *capacity* hand-off of one
 step to a bigger box or the compilation service — decided on resources, not on
 whether you can run Docker at all.
@@ -1302,32 +1304,80 @@ can be deployed independently:
    (Stage 7). Validation against the twin belongs to run_test (item 5 below),
    not to decrypt — keep the production binary free of test-only inputs.
 
-Use CMake with `find_package(OpenFHE)` for all four programs. **Use this exact
-include/link block — OpenFHE splits its headers across `core/`, `pke/`, and
-`binfhe/`, and `pke` transitively includes `binfhecontext.h` from `binfhe/`, so
-omitting any of them fails with `fatal error: binfhecontext.h: No such file or
-directory`:**
+Build the four programs by linking the installed SDK through
+`find_package(NiobiumFhetch)`. That single package pulls in `libnbfhetch`, the
+instrumented OpenFHE headers and libraries, and the `openfhe_cprobe_*` hooks, so
+there is no manual OpenFHE wiring. **Use this `CMakeLists.txt`** (verified in the
+image):
 
 ```cmake
-find_package(OpenFHE REQUIRED)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenFHE_CXX_FLAGS}")
+cmake_minimum_required(VERSION 3.16)
+project(app CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+find_package(NiobiumFhetch REQUIRED)
 
 add_executable(server server.cpp)      # likewise keygen / encrypt / decrypt
-target_include_directories(server PRIVATE
-    ${OpenFHE_INCLUDE}
-    ${OpenFHE_INCLUDE}/third-party/include
-    ${OpenFHE_INCLUDE}/core
-    ${OpenFHE_INCLUDE}/pke
-    ${OpenFHE_INCLUDE}/binfhe)
-target_link_libraries(server PRIVATE ${OpenFHE_SHARED_LIBRARIES})
+target_link_libraries(server PRIVATE Niobium::niobium_fhetch)
 ```
 
-Link via `${OpenFHE_SHARED_LIBRARIES}` rather than naming targets by hand
-(robust across OpenFHE releases). Enable PKE, KEYSWITCH, and LEVELEDSHE
-features on the crypto context. Enable ADVANCEDSHE if using Chebyshev
-evaluation or advanced rotation patterns. Use OpenFHE's serialization API
-(Serial::SerializeToFile / Serial::DeserializeFromFile) for all inter-program
-data exchange.
+**Ship a container wrapper and a `run_test.sh` so the commands stay short.**
+Generate two scripts in `fhe-design/`:
+
+- `run-in-container.sh` — runs a command in the FHE-dev image with the project
+  mounted at `/work` (and `~/.fog` when present, for the Fog mode):
+  ```bash
+  #!/usr/bin/env bash
+  set -euo pipefail
+  IMAGE="${FHE_DEV_IMAGE:-ghcr.io/niobiuminc/fhe-dev:v0.13.0}"
+  FOG=(); [ -d "$HOME/.fog" ] && FOG=(-v "$HOME/.fog:/root/.fog")
+  exec docker run --rm -v "$PWD":/work -w /work "${FOG[@]}" "$IMAGE" bash -c "$*"
+  ```
+- `run_test.sh [--cpu|--sim|--fog]` — orchestrates keygen -> encrypt -> server ->
+  decrypt across a client home and a server home (the server refuses to start if a
+  secret key is in its home; include that negative test), forwards the mode to
+  `server` (running the server step under `fog submit` for `--fog`), then compares
+  the decrypted output to the faithful twin and reports timings, boundary sizes,
+  and peak server RSS.
+
+Build once, then validate the CPU run, all through the wrapper:
+
+```bash
+./run-in-container.sh "cmake -S . -B build \
+    -DCMAKE_PREFIX_PATH='/opt/niobium-client/vendor/lib/niobium-client;/opt/niobium-client/vendor/lib/openfhe' \
+    && cmake --build build -j"
+./run-in-container.sh "./run_test.sh --cpu"
+```
+
+The client programs (keygen/encrypt/decrypt) never open a session, but linking
+them the same way is harmless. Enable PKE, KEYSWITCH, and LEVELEDSHE features on
+the crypto context, plus ADVANCEDSHE for Chebyshev evaluation or advanced rotation
+patterns. Use OpenFHE's serialization API (Serial::SerializeToFile /
+Serial::DeserializeFromFile) for all inter-program data exchange.
+
+(On a niobium-client older than the `find_package` Config, link the target the
+manual way instead: `find_package(OpenFHE)` +
+`include(<prefix>/lib/cmake/NiobiumFhetch/NiobiumFhetchTargets.cmake)` +
+`target_link_directories(server PRIVATE ${OpenFHE_LIBDIR})`.)
+
+**Factor the circuit into a shared `run_circuit()`.** Put the homomorphic
+circuit body in one function in `fhe-design/common.hpp`:
+
+```cpp
+// common.hpp: the circuit body, called by the server in both run modes
+inline Ciphertext<DCRTPoly> run_circuit(
+        CryptoContext<DCRTPoly>& cc, const Model& m,
+        const std::vector<Ciphertext<DCRTPoly>>& x) {
+    // ... the exact forward pass (Linear -> activation -> Linear -> ...) ...
+    return result;
+}
+```
+
+The server calls `run_circuit(...)` in every mode. On `--cpu` it serializes the
+OpenFHE result directly; `--sim` and the default both wrap `run_circuit(...)` in a
+`niobium::compiler()` session to generate the trace, then reconstruct the result
+locally through `fhetch_sim` (`--sim`) or from the Fog (default, Stage 10).
+Keeping the circuit in one place means the modes cannot diverge.
 
 **Why four programs:** This structure makes the trust boundaries from Stage 1
 concrete in the code. Each boundary between programs is a serialization point
@@ -1534,68 +1584,66 @@ for anyone reviewing or extending the application.
 `references/example-set-membership.md`, which includes a complete threat model
 and security analysis.
 
-## Stage 10: Optional Fog Deployment Variant
+## Stage 10: Run the Fog Deployment (`app/`)
 
-The CPU OpenFHE application is now built, validated (`run_test` green against the
-twin, the two-process demo standing), **and fully documented** (Stage 9). That is
-a complete, self-contained deliverable. This is the point — and the only point —
-to consider an additional deployment target, because the canonical design is now
-frozen and described.
+`app/` is built and its CPU run is validated (`run_test --cpu` green against the
+twin, the two-process demo standing) and documented (Stage 9). The **same binary**
+generates the FHETCH trace and targets the Fog; there is no second build and no
+separate directory. Every mode runs the identical computation: `--cpu` serializes
+the OpenFHE result, while `--sim` and the default both record the `.fhetch` trace
+and differ only in where it is reconstructed (local `fhetch_sim` vs the Fog).
 
-**Ask the user, as a concrete choice — do not skip it silently, and do not emit
-anything without an explicit yes.** Put it plainly: the core CPU deliverable is
-finished and documented; would they like a second build of the *same* validated
-design that runs through the **Niobium Mistic / Fog** path? Offer exactly two
-answers — **emit the Fog variant**, or **stop here** — and act on the reply.
-Proceed into the steps below only on an explicit yes.
+### Validate locally through the simulator (`--sim`) — required
 
-The Fog variant is a **deployment-target build of a known-good design, not a new
-design path.** niobium-client records the identical computation as a FHETCH
-Polynomial IR trace through its instrumented OpenFHE, replays that trace in a
-**local simulator to validate it**, and can then submit it to the Niobium
-compilation service for hardware deployment. No circuit, weights, parameters, or
-packing change.
+Run the app with `--sim` and verify the result the same way the `--cpu` run was
+verified, against the faithful twin, through the local `fhetch_sim`, so it is fast
+and needs no Fog account:
 
-### Emit the variant
+```bash
+./run-in-container.sh "./run_test.sh --sim"      # record -> fhetch_sim -> compare vs twin
+```
 
-- **Location.** Emit it as a parallel directory in the *application* repo —
-  `fhe-design/app-fog/` next to `fhe-design/app/` (mirroring the `app-gpu/`
-  convention). Never write into the niobium-client repository; it is only a
-  build-time dependency.
-- **Instrument, don't redesign.** The Fog server runs the identical circuit —
-  same weights, parameters, packing — bracketed with `niobium::compiler()`
-  record/replay. Make this structural: factor the circuit body into a shared
-  `run_circuit(...)` in `common.hpp` that *both* the plain server and the Fog
-  server call, so the math cannot drift. Only the **server** is instrumented
-  (it is the compute); keygen/encrypt/decrypt are reused unchanged as the client
-  side.
-- **Build.** Link niobium-client's `niobium_fhetch` (graft `app-fog/` into a
-  niobium-client checkout's `examples/` and `make build-release`); pass
-  `--no-ring-dim-check` for N = 2^16, and confirm the instrumented OpenFHE
-  version matches the app's (the FHE-dev image line).
-- **Distinct from the `nb` DSL path.** The DSL rewrites the computation and
-  generates OpenFHE; this add-on instead *reuses the finished OpenFHE app*
-  through niobium-client's instrumented-OpenFHE entry point. Do not conflate them.
+- **To the same bar.** The session writes the `.fhetch` trace and the simulator
+  reconstructs the result from it; that result must reproduce the twin within the
+  **encryption-noise tolerance recorded in Stage 7, with zero decision flips**,
+  the identical `run_test` criterion the `--cpu` run cleared.
+- **Ring-level identity check (free).** Generating the trace also yields a
+  bit-identical "simulator vs OpenFHE" ring-level comparison: the `--sim` run and
+  the `--cpu` run must agree exactly at the ring level, confirming the trace
+  captured the computation faithfully before it ever reaches hardware.
+- `run_test.sh` passes `--no-ring-dim-check` to the server for N = 2^16.
+- Report both results in the Stage 9 results report as the Fog row: "same
+  design, validated on the Fog path by simulation."
 
-### Validate by simulation
+### Deploy to the Fog (default mode) — needs an API key
 
-The Fog variant is verified the same way the CPU app was — against the faithful
-twin — but through niobium-client's **local simulator** rather than an encrypted
-run, so it is fast and needs no new ground truth:
+The default mode records the trace and dispatches it to the Niobium Fog rather
+than the local simulator, so it needs a Fog **API key**. The server preflights for
+one (`~/.fog/credentials`, written by `fog login`, or `FOG_API_TOKEN`) and, when
+none is found, prints a friendly pointer instead of failing cryptically or
+silently falling back to the simulator:
 
-- **Replay to the same bar.** The simulator replay of the recorded trace must
-  reproduce the twin within the **encryption-noise tolerance recorded in Stage 7,
-  with zero decision flips** — the identical `run_test` pass criterion the CPU
-  build had to clear.
-- **Ring-level identity check (free).** The record step also yields a
-  bit-identical "simulator vs OpenFHE" ring-level comparison: the instrumented
-  run and the plain OpenFHE run must agree exactly at the ring level, confirming
-  the trace faithfully captured the computation before it ever reaches hardware.
-- Report both results as an addendum alongside the Stage 9 results report — the
-  Fog row is "same design, validated on the Mistic path by simulation."
+```
+This program runs on the Niobium Fog and needs an API key, but none was found.
+  • Sign in:  fog login                                   (mints a key from your account)
+  • Sign up:  https://console.niobium.co/request-account
+  • No account yet? Validate locally instead:   <app> --sim
+```
+
+With a key, deploy through the `fog` CLI (baked into the image), which provisions
+a worker, wires its endpoint into `NBCC_FHETCH_SERVER`, and runs the app against
+it — the circuit is unchanged; only where `replay()` dispatches differs. The
+wrapper mounts `~/.fog` when present, so once you have a key it just works:
+
+```bash
+# once — mint a key (interactive):
+docker run --rm -it -v "$HOME/.fog":/root/.fog ghcr.io/niobiuminc/fhe-dev:v0.13.0 fog login
+# deploy — run_test.sh --fog runs the server step under `fog submit`:
+./run-in-container.sh "./run_test.sh --fog"
+```
 
 **For the full how-to:** Read `references/niobium-client-fog-variant.md` (layout,
-the exact `niobium::compiler()` recording pattern, CMake, the graft build recipe,
+the exact `niobium::compiler()` recording pattern, the in-container build,
 simulation verification, and trace submission).
 
 ## Reference Files
@@ -1611,7 +1659,7 @@ self-contained and can be read independently.
 | `references/fhe-scheme-selection.md` | Stage 4: choosing between CKKS, BFV, and BGV |
 | `references/building-your-first-fhe-application.md` | Stages 3, 6, 8: the development checklist from plaintext through implementation |
 | `references/implementing-with-nb-dsl.md` | Stage 8 (optional DSL path): implementing the design in the `nb` FHE DSL (niobium-client) — stage-to-construct mapping, workflow, pitfalls, limitations |
-| `references/niobium-client-fog-variant.md` | Stage 10 (optional Fog variant): emitting a niobium-client / Mistic build of a validated OpenFHE app — `app-fog/` layout, the `niobium::compiler()` record/replay pattern, CMake, graft build recipe, simulation verification |
+| `references/niobium-client-fog-variant.md` | Stage 10: running the niobium-client Fog deployment (`app/`) of a validated OpenFHE app (`app/` layout, the `niobium::compiler()` recording pattern, the in-container build, simulation verification, trace submission) |
 | `references/fhe-application-dialogue.md` | Stages 3–8: a worked example showing all steps for a real anomaly detection application |
 | `references/example-set-membership.md` | Stages 5–9: complete CKKS design spec and implementation (squared distance, iterated squaring, column-major packing, threat model) |
 | `references/example-fetch-by-similarity.md` | Stage 5: advanced CKKS patterns (Chebyshev approximation, slot replication, running sums, output compression) |

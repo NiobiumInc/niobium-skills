@@ -1,82 +1,96 @@
-# FHE-dev — the build-and-run environment for the fhe-application-design skill.
+# syntax=docker/dockerfile:1
 #
-# Ships everything the skill's Stage 8 needs to BUILD a user's own four-program
-# OpenFHE application, plus a Python ML stack so references and twins that need
-# torch/sklearn can run here when Claude's own sandbox can't fit them:
+# ghcr.io/niobiuminc/fhe-dev — the FHE build-and-run environment for the
+# fhe-application-design skill (Stage 0).
 #
-#   - OpenFHE (C++ dev: headers + libs + CMake package) — build new FHE code
-#   - CMake, a C++20 compiler, git
-#   - Python 3 + numpy / scipy / scikit-learn / torch (CPU)
+# Builds Niobium's instrumented OpenFHE fork + libnbfhetch from niobium-client
+# and installs the SDK, so the four-program app builds against it and, run under
+# a niobium::compiler() session, generates the FHETCH trace for the Fog. The twin
+# and any PyTorch reference also run here (numpy / scipy / scikit-learn / CPU
+# torch). The bootstrap parameter lab is baked in as `fhe-boot-lab` (Stage 6).
 #
-# Distribution model: this image is BUILT ONCE and published to GHCR. Users
-# `docker pull` it — they never build OpenFHE on their own machine. See
-# ../references/environment-setup.md for how it is used.
+# This Dockerfile lives in the skill and builds the image directly. HAZE (the
+# GPU C API) is intentionally omitted.
 #
-# Build + publish (maintainers):
-#   docker build -t ghcr.io/niobiuminc/fhe-dev:latest .
-#   docker push ghcr.io/niobiuminc/fhe-dev:latest
+# Build (from this directory):
+#   docker build -t ghcr.io/niobiuminc/fhe-dev:v0.13.0 .
+#   docker build --build-arg GIT_REF=<sha|branch|tag> -t ghcr.io/niobiuminc/fhe-dev:v0.13.0 .
+#   docker build --build-arg BUILD_JOBS=4 -t ghcr.io/niobiuminc/fhe-dev:v0.13.0 .   # more RAM
+#
+# Run (project bind-mounted at /work for app builds):
+#   docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.13.0 make test-release        # smoke test
+#   docker run --rm -v "$PWD":/work -w /work ghcr.io/niobiuminc/fhe-dev:v0.13.0 <cmd>
 
-FROM ubuntu:22.04
+ARG UBUNTU_VERSION=24.04
+FROM ubuntu:${UBUNTU_VERSION} AS base
 
-ENV DEBIAN_FRONTEND=noninteractive
-
+# Toolchain + TLS backend. MATHBACKEND=4 with NTL/TCM/OPENMP/NATIVEOPT=OFF keeps
+# the dependency graph tiny. git fetches the submodules; libssl-dev compiles the
+# FHETCH transport client with TLS so it accepts https:// worker URLs (the Fog
+# path); ca-certificates verifies those certs and lets the in-image git clone
+# reach GitHub. python3 backs the twin, the references, and the nb DSL.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      build-essential \
-      cmake \
-      git \
-      ca-certificates \
-      libomp-dev \
-      python3 \
-      python3-pip \
+        build-essential cmake ninja-build git ca-certificates libssl-dev \
+        python3 python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
-# --- OpenFHE (pinned release) -----------------------------------------------
-# Build once, install to /usr/local, then drop the source tree to keep the
-# image smaller. This is the slow layer; it only runs at image-build time.
-# v1.5.1: aligned with FIDESlib's patched fork (fideslib-ref-v1.5.1.1) so a
-# future GPU tier shares the client wire format. Bumped from v1.2.3; all three
-# challenge apps regression-tested against this pin before release.
-ARG OPENFHE_VERSION=v1.5.1
-RUN git clone --depth 1 --branch ${OPENFHE_VERSION} \
-        https://github.com/openfheorg/openfhe-development.git /tmp/openfhe \
- && cmake -S /tmp/openfhe -B /tmp/openfhe/build \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DBUILD_UNITTESTS=OFF \
-        -DBUILD_EXAMPLES=OFF \
-        -DBUILD_BENCHMARKS=OFF \
-        -DWITH_OPENMP=ON \
- && cmake --build /tmp/openfhe/build -j"$(nproc)" \
- && cmake --install /tmp/openfhe/build \
- && ldconfig \
- && rm -rf /tmp/openfhe
+# Python stack for the twin tier (Stages 1-7) and PyTorch references (Stage 3).
+RUN pip3 install --no-cache-dir --break-system-packages numpy scipy scikit-learn \
+ && pip3 install --no-cache-dir --break-system-packages torch --index-url https://download.pytorch.org/whl/cpu
 
-# --- Python ML stack (references + faithful twins) --------------------------
-# torch is CPU-only to keep the image portable; it is the heavy layer. If you
-# don't need torch references, a slimmer tag can drop it.
-RUN pip3 install --no-cache-dir --upgrade pip \
- && pip3 install --no-cache-dir numpy scipy scikit-learn \
- && pip3 install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+# Clone niobium-client and init only niobium-fhetch (+ its nested instrumented
+# OpenFHE fork + json). niobium-haze (the GPU C API) is skipped: this SDK does
+# not ship it and the build never references it.
+ARG GIT_REPO=https://github.com/NiobiumInc/niobium-client.git
+ARG GIT_REF=main
+WORKDIR /opt
+RUN git clone "${GIT_REPO}" niobium-client \
+    && git -C niobium-client checkout "${GIT_REF}" \
+    && git -C niobium-client submodule update --init --recursive vendor/niobium-fhetch
 
-# --- Smoke test -------------------------------------------------------------
-COPY smoke_test.sh /usr/local/bin/fhe-smoke-test
-RUN chmod +x /usr/local/bin/fhe-smoke-test
+WORKDIR /opt/niobium-client
 
-# --- Bootstrap parameter lab -------------------------------------------------
-# Prebuilt probe: measures REAL CKKS bootstrap accuracy at candidate
-# parameters in minutes (EvalBootstrap silently no-ops on shallow inputs, so
-# naive tests validate nothing — this burns inputs down first). Run BEFORE
-# designing any bootstrapped circuit:  fhe-boot-lab <scaling> <first> <depth>
+# Cap build parallelism by MEMORY, not cores: heavy OpenFHE/template TUs use
+# ~2-3 GB each in cc1plus. Override to match host RAM: --build-arg BUILD_JOBS=N.
+ARG BUILD_JOBS=2
+ENV CMAKE_BUILD_PARALLEL_LEVEL=${BUILD_JOBS}
+
+# Build (Release) and install the SDK into the image. Examples stay OFF; the
+# transport tools build. The install ships NiobiumFhetchConfig.cmake, so an app
+# builds against it with find_package(NiobiumFhetch) alone. install-cli puts the
+# `fog` CLI + nbcc_fhetch_replay on PATH (CLI_PREFIX=/usr/local) for the Fog path.
+RUN make config-release build-release \
+    && make install-release \
+    && make install-cli CLI_PREFIX=/usr/local
+
+# Bootstrap parameter lab (Stage 6): measures REAL CKKS bootstrap accuracy at
+# candidate parameters in minutes (EvalBootstrap silently no-ops on shallow
+# inputs, so it burns inputs down first). Compiled against the installed OpenFHE.
 COPY boot_lab.cpp /tmp/boot_lab.cpp
-RUN g++ -O2 -std=c++17 /tmp/boot_lab.cpp -o /usr/local/bin/fhe-boot-lab \
-        -I/usr/local/include/openfhe \
-        -I/usr/local/include/openfhe/core \
-        -I/usr/local/include/openfhe/pke \
-        -I/usr/local/include/openfhe/binfhe \
-        -I/usr/local/include/openfhe/third-party/include \
-        -lOPENFHEpke -lOPENFHEcore -lOPENFHEbinfhe -fopenmp \
+# The instrumented OpenFHE fork references openfhe_cprobe_* hooks that live in
+# libnbfhetch, so even a pure-OpenFHE program must link nbfhetch to resolve them.
+RUN OFHE=/opt/niobium-client/vendor/lib/openfhe \
+ && NC=/opt/niobium-client/vendor/lib/niobium-client \
+ && g++ -O2 -std=c++17 /tmp/boot_lab.cpp -o /usr/local/bin/fhe-boot-lab \
+        -I"$OFHE/include/openfhe" \
+        -I"$OFHE/include/openfhe/core" \
+        -I"$OFHE/include/openfhe/pke" \
+        -I"$OFHE/include/openfhe/binfhe" \
+        -I"$OFHE/include/openfhe/third-party/include" \
+        -L"$OFHE/lib" -lOPENFHEpke -lOPENFHEcore -lOPENFHEbinfhe \
+        -L"$NC/lib" -lnbfhetch \
+        -Wl,-rpath,"$OFHE/lib" -Wl,-rpath,"$NC/lib" \
  && rm /tmp/boot_lab.cpp
 
-# The mounted project folder is bind-mounted here at run time:
-#   docker run --rm -v "$PWD":/work ghcr.io/niobiuminc/fhe-dev:latest <cmd>
-WORKDIR /work
+# Interactive conveniences: an in-container editor, and git-lfs so bind-mounted
+# project repos can fetch their LFS-tracked inputs (datasets, model blobs) from
+# inside the container. Kept in a late layer so it doesn't invalidate the
+# OpenFHE build cache above.
+RUN apt-get update && apt-get install -y --no-install-recommends vim git-lfs \
+    && git lfs install --system \
+    && rm -rf /var/lib/apt/lists/*
+
+# Default to the SDK source tree so `make test-release` and the examples work
+# out of the box. App builds bind-mount the project and run with `-w /work`.
+WORKDIR /opt/niobium-client
 CMD ["/bin/bash"]

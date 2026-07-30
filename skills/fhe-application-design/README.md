@@ -1,12 +1,12 @@
 # FHE Application Design: an AI Agent Skill for FHE
 
-An AI Agent Skill that guides developers through designing and building Fully Homomorphic Encryption (FHE) applications with OpenFHE (and an optional Niobium DSL path). It provides a 9-stage methodology covering the full design process, from establishing a privacy model through implementation and protocol specification.
+An AI Agent Skill that guides developers through designing and building Fully Homomorphic Encryption (FHE) applications with OpenFHE (and an optional Niobium DSL path). It provides an eleven-stage methodology (Stages 0–10) covering the full design process, from build environment and privacy model through implementation, protocol specification, and a Niobium Fog deployment.
 
 ## What This Skill Does
 
-When a user asks the agent to design an FHE application, this skill provides structured guidance through nine stages, preceded by a one-time environment setup:
+When a user asks the agent to design an FHE application, this skill provides structured guidance through eleven stages (0–10), beginning with a one-time environment setup:
 
-0. **Prepare the environment** — install Docker and pull the prebuilt FHE-dev image (OpenFHE + toolchain + Python ML stack); run a smoke test so the twin and the FHE program can both be built and run before design starts
+0. **Prepare the environment** — build the FHE-dev container from the skill's Dockerfile (Niobium's instrumented OpenFHE + `libnbfhetch`, plus the Python twin stack: numpy, and CPU torch for a PyTorch reference); run a smoke test so the twin and the FHE program can both be built and run before design starts
 1. **Privacy model** — identify parties, adversaries, encryption model (single vs. independent encryptors), output privacy, and output integrity (transciphering)
 2. **Feasibility assessment** — data-obliviousness, arithmetic lane, multiplicative depth, SIMD parallelism
 3. **Plaintext algorithm** — get it working unencrypted first, with client-server separation
@@ -16,6 +16,7 @@ When a user asks the agent to design an FHE application, this skill provides str
 7. **Build and validate the faithful twin** — complete the FHE-shaped plaintext twin at the chosen parameters, run it on the test data, compare to the reference, and gate on the result (approval in interactive runs; proceed + record in autonomous runs)
 8. **Implement the FHE program** — OpenFHE C++ four-program architecture (keygen, encrypt, server, decrypt, plus a test runner) and a separate-process demo; an optional `nb` DSL path exists
 9. **Protocol specification** — message flow, threat model, information leakage, integrity guarantees
+10. **Fog deployment** — run the app in its default (Fog) mode to generate the FHETCH trace, validate it through the local simulator against the twin, and optionally submit it to the Niobium Fog
 
 The skill ensures that common protocol-level errors are caught early: packing data across privacy boundaries, ignoring output integrity when the decryptor differs from the consumer, conflating SIMD parallelism with task-level concurrency, and over-provisioning ciphertext depth.
 
@@ -48,7 +49,7 @@ apply to Cowork). Instead, add this catalog as a plugin marketplace:
 3. Click **Browse plugins**, find **fhe-application-design**, and click **Install**.
 4. In a task, type `/` (or the **+** button) to invoke the **FHEanna** skill.
 
-The FHE-dev Docker image (Stage 0) is still a separate `docker pull` — see Stage 0 below.
+Stage 0's build-and-run environment (the FHE-dev container) is a separate setup step — the skill walks you through it.
 
 ### Coding agents: universal installer
 
