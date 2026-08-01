@@ -127,6 +127,31 @@ docker run --rm -it -v "$HOME/.fog":/root/.fog ghcr.io/niobiuminc/fhe-dev:v0.13.
 ./run-in-container.sh "./run_test.sh"
 ```
 
+**Non-negotiable: the default mode must actually submit.** "Runs the server step
+under `fog submit`" is a literal requirement, not a description of intent. When a
+key is present, `run_test`'s no-flag path **must execute the server through
+`fog submit`** — the concrete call is the app binary followed by a **required**
+`--target`:
+
+```bash
+fog submit ./build/<app>_server <server_home> --no-ring-dim-check --target="${FOG_TARGET:?set a Fog target}"
+```
+
+`fog submit` provisions a Fog job, wires `NBCC_FHETCH_SERVER` to the assigned
+worker, and runs your server against it; the server records the trace, dispatches
+`replay()` to the worker, and reconstructs the result locally — so the rest of the
+pipeline (copy `ct_result` back → decrypt → compare vs the twin) is identical to the
+`--cpu` / `--sim` path. `--target` is required: **`FUNC_SIM`** is the Fog's
+functional simulator (safe, no hardware); a hardware/compiler target is used for a
+real deployment.
+
+**Do NOT emit a Fog branch that only preflights and exits.** A `run_test` whose
+default mode — with a key present — prints "launch under `fog submit`" and returns
+without ever calling `fog submit` is **incomplete**. This is the single most common
+way this stage is faked, precisely because the Fog path is easy to leave
+unexercised. Wire the real dispatch, and run it once against a live key (target
+`FUNC_SIM` suffices) before treating the app as done.
+
 ## Verification gate
 
 The Fog build must clear the **same** bar as the CPU app, plus a free extra:
