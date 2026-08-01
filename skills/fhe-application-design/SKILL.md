@@ -33,6 +33,19 @@ layout, parameter selection, and implementation.
 
 ## How to Use This Skill
 
+**Choose the implementation path first.** Before starting the stages, ask the user
+which front door they want:
+
+> How do you want to build this application?
+> (a) The Niobium DSL (recommended if you are newer to FHE): a higher-level language
+>     that expresses the computation and generates the OpenFHE program for you.
+> (b) OpenFHE directly (for experienced FHE practitioners): hand-written OpenFHE,
+>     following the full stage-by-stage design below.
+
+For (a), follow `references/implementing-with-nb-dsl.md`, the DSL front door. For
+(b), continue with the stages below. Both paths target the Niobium Fog and differ
+only in how the program is authored.
+
 Follow the stages below in order. Each stage has a brief description here in
 the SKILL.md, with pointers to reference files that contain deeper guidance.
 Read the relevant reference file when you need the detail for a given stage.
@@ -1324,7 +1337,7 @@ target_link_libraries(server PRIVATE Niobium::niobium_fhetch)
 ```
 
 **Ship a container wrapper and a `run_test.sh` so the commands stay short.**
-Generate these in `fhe-design/`:
+Generate these at the top of the application directory:
 
 - `run-in-container.sh` — runs a command in the FHE-dev image with the project
   mounted at `/work` (and `~/.fog` when present, for the Fog mode):
@@ -1341,9 +1354,14 @@ Generate these in `fhe-design/`:
 - `run_test.sh [--sim|--cpu]` — orchestrates keygen -> encrypt -> server ->
   decrypt across a client home and a server home (the server refuses to start if a
   secret key is in its home; include that negative test), forwards the mode to
-  `server`, then compares
-  the decrypted output to the faithful twin and reports timings, boundary sizes,
-  and peak server RSS. With **no flag it targets the Fog** (Stage 10): it preflights
+  `server`, then reports results in two tiers. **Lead with the application's own
+  quality metrics**: the model's task performance on the decrypted outputs, the
+  numbers a user weighing FHE for this workload would look at first (accuracy, area
+  under the curve, error distribution, or decision counts, as fits the task).
+  Present the FHE-specific comparison (decrypted output against the faithful twin,
+  the encryption error) and the deployment profile (timings, boundary sizes, peak
+  server memory) below that, as second-tier evidence. With **no flag it targets the
+  Fog** (Stage 10): it preflights
   for an API key (printing the sign-in / sign-up pointer if none is found), and with a
   key present **must dispatch the server under `fog submit … --target=`** — a
   print-and-exit stub is incomplete (see `references/niobium-client-fog-variant.md`
@@ -1378,7 +1396,7 @@ manual way instead: `find_package(OpenFHE)` +
 `target_link_directories(server PRIVATE ${OpenFHE_LIBDIR})`.)
 
 **Factor the circuit into a shared `run_circuit()`.** Put the homomorphic
-circuit body in one function in `fhe-design/common.hpp`:
+circuit body in one function in `common.hpp`:
 
 ```cpp
 // common.hpp: the circuit body, called by the server in both run modes
@@ -1586,14 +1604,17 @@ rewrite from scratch here.
    measured deployment numbers (peak server RSS, timings, actual boundary sizes),
    part d "not a lucky run," and the final PASS.)*
 
-3. **A run README** in the application directory: prerequisites (Docker + the
-   FHE-dev image), how to regenerate any non-committed inputs, the
-   build+run_test command with expected output and resource needs, and how to
-   run the application as a client/server deployment — the two-process run and
-   its two-host variant. A recipient with
-   Docker and the repository should need nothing else to reproduce the
-   encrypted run. *(Commands and structure drafted at the gate; here fill the
-   "expected output" block with the measured timings, peak RSS, and error.)*
+3. **A run README** in the application directory. It assumes only Docker on the
+   host and takes a newcomer from nothing to a run. Beyond whatever the user asked
+   for, it always includes: how to obtain the FHE-dev image (pull the published
+   image, or build it from `environment/`); how to regenerate any non-committed
+   inputs; and the run targets **led by the Fog** (a bare `run_test.sh` targets the
+   Niobium Fog, then `--cpu` and `--sim` for local validation), each with its
+   command, expected output, and resource needs. Include how to run the application
+   as a client/server deployment: the two-process run and its two-host variant. A
+   recipient with Docker and the repository should need nothing else to reproduce
+   the run. *(Commands and structure drafted at the gate; here fill the "expected
+   output" block with the measured timings, peak RSS, and error.)*
 
 This documentation serves both as a security specification and as a guide
 for anyone reviewing or extending the application.

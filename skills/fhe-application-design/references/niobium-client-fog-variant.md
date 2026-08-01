@@ -18,17 +18,18 @@ to the Fog path, and never run the Fog mode before the CPU run passes.
 
 ## Where it lives
 
-One directory in the **application repo** holds the whole app:
+The whole app is one directory in the **application repo**:
 
 ```
-fhe-design/
-├── app/          # the four-program app (keygen/encrypt/server/decrypt + run_test)
-└── common.hpp    # the shared run_circuit() both run modes call
+<app>/
+├── app/          # the four programs (keygen/encrypt/server/decrypt) + common.hpp
+├── data/         # model, inputs, and the twin/reference ledgers
+└── run_test.sh   run-in-container.sh   Makefile   README.md
 ```
 
 Keep the source in your repo; the FHE-dev container is only a build-and-run
-dependency (see Build below). There is no separate Fog directory: the default run
-mode is the Fog path.
+dependency (see Build below). The default run mode is the Fog path, reached with a
+bare `run_test.sh`.
 
 ## The governing rule: instrument, don't redesign
 
