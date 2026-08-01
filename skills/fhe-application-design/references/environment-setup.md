@@ -90,7 +90,7 @@ into your project folder along with a `run-in-container.sh` wrapper and a
 
 ```bash
 ./run-in-container.sh "cmake -S . -B build -DCMAKE_PREFIX_PATH='...' && cmake --build build -j"
-./run-in-container.sh "./run_test.sh --cpu"    # --sim for local fhetch_sim; --fog for the Fog
+./run-in-container.sh "./run_test.sh"          # no flag -> the Fog; --sim / --cpu validate locally
 ```
 
 The wrapper mounts your project folder into the container at `/work` (and

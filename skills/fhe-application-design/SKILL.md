@@ -142,8 +142,10 @@ The work runs at two speeds:
   environment, so it happens in the **FHE-dev** image, built from the skill's
   Dockerfile. The image ships Niobium's instrumented OpenFHE fork and
   `libnbfhetch`, so it runs the programs on CPU and generates the FHETCH trace the
-  Fog runs. *Who* runs the container depends on your execution mode (below), not
-  on which product the user is in.
+  Fog runs. The Niobium Fog is the execution platform these applications are built
+  for; the CPU and simulator runs validate correctness before deployment. *Who*
+  runs the container depends on your execution mode (below), not on which product
+  the user is in.
 
 Three one-time steps:
 
@@ -1333,14 +1335,17 @@ Generate two scripts in `fhe-design/`:
   FOG=(); [ -d "$HOME/.fog" ] && FOG=(-v "$HOME/.fog:/root/.fog")
   exec docker run --rm -v "$PWD":/work -w /work "${FOG[@]}" "$IMAGE" bash -c "$*"
   ```
-- `run_test.sh [--cpu|--sim|--fog]` — orchestrates keygen -> encrypt -> server ->
+- `run_test.sh [--sim|--cpu]` — orchestrates keygen -> encrypt -> server ->
   decrypt across a client home and a server home (the server refuses to start if a
   secret key is in its home; include that negative test), forwards the mode to
-  `server` (running the server step under `fog submit` for `--fog`), then compares
+  `server`, then compares
   the decrypted output to the faithful twin and reports timings, boundary sizes,
-  and peak server RSS.
+  and peak server RSS. With **no flag it targets the Fog** (Stage 10): the server
+  runs under `fog submit` and preflights for an API key, printing the sign-in /
+  sign-up pointer if none is found. `--sim` and `--cpu` select the explicit
+  local-validation runs.
 
-Build once, then validate the CPU run, all through the wrapper:
+Build once, then validate locally on CPU, all through the wrapper:
 
 ```bash
 ./run-in-container.sh "cmake -S . -B build \
@@ -1422,9 +1427,9 @@ Also produce a fifth program:
    convenience of one folder silently violates the trust boundary the four
    programs exist to enforce.
 
-**Demonstrate the architecture as separate processes (gating item).** The
-four-program split makes the trust boundary concrete in code; a
-deployment-shaped demo must make it concrete in process and network topology.
+**Run the app as a client/server deployment across separate processes (gating
+item).** The four-program split makes the trust boundary concrete in code; a
+client/server deployment must make it concrete in process and network topology.
 Before considering an application done, stand the client and server up as
 separate OS processes that communicate only over HTTP/sockets, exchanging
 serialized ciphertext — never keys or plaintext. A single process that plays
@@ -1572,7 +1577,8 @@ rewrite from scratch here.
 3. **A run README** in the application directory: prerequisites (Docker + the
    FHE-dev image), how to regenerate any non-committed inputs, the
    build+run_test command with expected output and resource needs, and how to
-   run the two-process demo including the two-host variant. A recipient with
+   run the application as a client/server deployment — the two-process run and
+   its two-host variant. A recipient with
    Docker and the repository should need nothing else to reproduce the
    encrypted run. *(Commands and structure drafted at the gate; here fill the
    "expected output" block with the measured timings, peak RSS, and error.)*
@@ -1638,8 +1644,8 @@ wrapper mounts `~/.fog` when present, so once you have a key it just works:
 ```bash
 # once — mint a key (interactive):
 docker run --rm -it -v "$HOME/.fog":/root/.fog ghcr.io/niobiuminc/fhe-dev:v0.13.0 fog login
-# deploy — run_test.sh --fog runs the server step under `fog submit`:
-./run-in-container.sh "./run_test.sh --fog"
+# deploy to the Fog (the default — no flag); the server step runs under `fog submit`:
+./run-in-container.sh "./run_test.sh"
 ```
 
 **For the full how-to:** Read `references/niobium-client-fog-variant.md` (layout,

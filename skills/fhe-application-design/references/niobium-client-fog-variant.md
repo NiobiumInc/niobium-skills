@@ -115,16 +115,16 @@ validation (`--sim`):
 runs the plain OpenFHE path (the Stage 8 CPU gate). The image is one coherent
 build, so the instrumented OpenFHE and `libnbfhetch` versions always match.
 
-**Deploying to the Fog (`--fog`).** The default (Fog) mode dispatches the trace to
+**Deploying to the Fog (the default).** The default (Fog) mode dispatches the trace to
 the Niobium Fog and needs an API key; the server preflights for one
 (`~/.fog/credentials` via `fog login`, or `FOG_API_TOKEN`) and prints a friendly
 sign-in / sign-up pointer if it is missing, with `--sim` as the account-free
 alternative. Mint a key once, then deploy through the wrapper (which mounts
-`~/.fog`); `run_test.sh --fog` runs the server step under `fog submit`:
+`~/.fog`); the bare `run_test.sh` (no flag) runs the server step under `fog submit`:
 
 ```bash
 docker run --rm -it -v "$HOME/.fog":/root/.fog ghcr.io/niobiuminc/fhe-dev:v0.13.0 fog login
-./run-in-container.sh "./run_test.sh --fog"
+./run-in-container.sh "./run_test.sh"
 ```
 
 ## Verification gate
