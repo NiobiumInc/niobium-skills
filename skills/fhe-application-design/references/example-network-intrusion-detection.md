@@ -6,7 +6,7 @@ A client organization monitors its own network traffic for intrusions by sending
 encrypted network features to a security service, which runs an anomaly detection
 neural network entirely under encryption and returns encrypted anomaly scores.
 
-Source: Niobium Microsystems FHEsible NID application.
+Source: Niobium FHEsible NID application.
 
 This example demonstrates several patterns relevant to FHE application design:
 ML inference under encryption (autoencoder ensemble), Chebyshev polynomial
