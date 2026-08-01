@@ -111,9 +111,11 @@ validation (`--sim`):
 ./run-in-container.sh "./run_test.sh --sim"      # record -> fhetch_sim -> compare vs twin
 ```
 
-`run_test.sh` passes `--no-ring-dim-check` to the server for N = 2^16; `--cpu`
-runs the plain OpenFHE path (the Stage 8 CPU gate). The image is one coherent
-build, so the instrumented OpenFHE and `libnbfhetch` versions always match.
+`run_test.sh` leaves the **minimum-ring-dimension check on** — it passes at
+N = 2^16, so the flag is unnecessary. `--no-ring-dim-check` is an explicit opt-in
+the user adds only to run at a sub-standard ring, never a default. `--cpu` runs the
+plain OpenFHE path (the Stage 8 CPU gate). The image is one coherent build, so the
+instrumented OpenFHE and `libnbfhetch` versions always match.
 
 **Deploying to the Fog (the default).** The default (Fog) mode dispatches the trace to
 the Niobium Fog and needs an API key; the server preflights for one
@@ -134,7 +136,7 @@ key is present, `run_test`'s no-flag path **must execute the server through
 `--target`:
 
 ```bash
-fog submit ./build/<app>_server <server_home> --no-ring-dim-check --target="${FOG_TARGET:?set a Fog target}"
+fog submit ./build/<app>_server <server_home> --target="${FOG_TARGET:?set a Fog target}"
 ```
 
 `fog submit` provisions a Fog job, wires `NBCC_FHETCH_SERVER` to the assigned
@@ -143,7 +145,9 @@ worker, and runs your server against it; the server records the trace, dispatche
 pipeline (copy `ct_result` back → decrypt → compare vs the twin) is identical to the
 `--cpu` / `--sim` path. `--target` is required: **`FUNC_SIM`** is the Fog's
 functional simulator (safe, no hardware); a hardware/compiler target is used for a
-real deployment.
+real deployment. (No `--no-ring-dim-check` here — the ring-dim guard is what would
+catch an insecure or hardware-incompatible ring before it dispatches, and at
+N = 2^16 it passes anyway; the Fog is the worst place to have bypassed it.)
 
 **Do NOT emit a Fog branch that only preflights and exits.** A `run_test` whose
 default mode — with a key present — prints "launch under `fog submit`" and returns
@@ -233,8 +237,9 @@ the things that actually bit:
 
 - **Bootstrap plumbing for the Fog server:** call `EvalBootstrapSetup(...)`
   before recording, and ensure the bootstrap/rotation keys are provisioned to
-  the server home and captured by `tag_keys`. Pass `--no-ring-dim-check` for
-  N = 2¹⁶. These match niobium-client's own `bootstrap` example.
+  the server home and captured by `tag_keys`. (niobium-client's own `bootstrap`
+  example passes `--no-ring-dim-check`, but only because it runs at a small test
+  ring; at N = 2¹⁶ the guard passes, so leave it on.)
 
 - **Run artifacts are not source.** The key dirs and `*_workload_*/` trace dirs
   regenerate each run — `.gitignore` them; commit only `app/` sources + any

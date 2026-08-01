@@ -1341,12 +1341,11 @@ Generate two scripts in `fhe-design/`:
   `server`, then compares
   the decrypted output to the faithful twin and reports timings, boundary sizes,
   and peak server RSS. With **no flag it targets the Fog** (Stage 10): it preflights
-  for an API key (printing the sign-in / sign-up pointer if none is found) and, when
-  a key **is** present, **actually runs the server step under `fog submit … --target=`**
-  and flows the result back through decrypt + compare. A default mode that prints
-  "launch under `fog submit`" and exits without dispatching is an incomplete stub —
-  non-negotiable; see `references/niobium-client-fog-variant.md` for the concrete
-  call. `--sim` and `--cpu` select the explicit local-validation runs.
+  for an API key (printing the sign-in / sign-up pointer if none is found), and with a
+  key present **must dispatch the server under `fog submit … --target=`** — a
+  print-and-exit stub is incomplete (see `references/niobium-client-fog-variant.md`
+  for the concrete call). `--sim` and `--cpu` select the explicit local-validation
+  runs.
 
 Build once, then validate locally on CPU, all through the wrapper:
 
@@ -1620,7 +1619,9 @@ and needs no Fog account:
   bit-identical "simulator vs OpenFHE" ring-level comparison: the `--sim` run and
   the `--cpu` run must agree exactly at the ring level, confirming the trace
   captured the computation faithfully before it ever reaches hardware.
-- `run_test.sh` passes `--no-ring-dim-check` to the server for N = 2^16.
+- The **minimum-ring-dimension check** (a security floor) stays on — it passes at
+  N = 2^16. `--no-ring-dim-check` is an explicit opt-in for a sub-standard ring, not
+  a default.
 - Report both results in the Stage 9 results report as the Fog row: "same
   design, validated on the Fog path by simulation."
 
