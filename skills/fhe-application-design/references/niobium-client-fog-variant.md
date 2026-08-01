@@ -99,24 +99,14 @@ level — a free "bit-identical" check (see Verification).
 
 ## Build and run (in the FHE-dev container)
 
-The app builds against the SDK installed in the FHE-dev image via
-`find_package(NiobiumFhetch)`, and runs through the `run-in-container.sh` wrapper
-and `run_test.sh` that Stage 8 generates (the wrapper mounts the project at
-`/work`, and `~/.fog` when present). Build once, then run the required local
-validation (`--sim`):
-
-```bash
-./run-in-container.sh "cmake -S . -B build \
-    -DCMAKE_PREFIX_PATH='/opt/niobium-client/vendor/lib/niobium-client;/opt/niobium-client/vendor/lib/openfhe' \
-    && cmake --build build -j"
-./run-in-container.sh "./run_test.sh --sim"      # record -> fhetch_sim -> compare vs twin
-```
-
-`run_test.sh` leaves the **minimum-ring-dimension check on** — it passes at
-N = 2^16, so the flag is unnecessary. `--no-ring-dim-check` is an explicit opt-in
-the user adds only to run at a sub-standard ring, never a default. `--cpu` runs the
-plain OpenFHE path (the Stage 8 CPU gate). The image is one coherent build, so the
-instrumented OpenFHE and `libnbfhetch` versions always match.
+The app builds against the SDK in the FHE-dev image via `find_package(NiobiumFhetch)`
+and runs through the generated `run-in-container.sh` wrapper and `run_test.sh`. See
+[run-harness.md](run-harness.md) for the scripts, the build command, the three run
+modes, and the `RINGCHK` / `FOG_TARGET` / `NREC` knobs. The image is one coherent
+build, so the instrumented OpenFHE and `libnbfhetch` versions always match. Before
+deploying to the Fog, run the required local validation,
+`./run-in-container.sh "./run_test.sh --sim"`, which generates the trace, runs it
+through `fhetch_sim`, and compares the result against the twin.
 
 **Deploying to the Fog (the default).** The default (Fog) mode dispatches the trace to
 the Niobium Fog and needs an API key; the server preflights for one
@@ -151,11 +141,6 @@ functional-simulator alternative (`FOG_TARGET=FUNC_SIM`) for a no-hardware check
 not the default. (No `--no-ring-dim-check` here — the ring-dim guard is what would
 catch an insecure or hardware-incompatible ring before it dispatches, and at
 N = 2^16 it passes anyway; the Fog is the worst place to have bypassed it.)
-
-The generated wrappers must be self-documenting: `run_test.sh` takes `-h`/`--help`
-listing its modes (no-flag Fog / `--cpu` / `--sim`) and env knobs (`FOG_TARGET`,
-`RINGCHK`, `NREC`); `run-in-container.sh` takes `--help` echoing the same, with the
-`./run_test.sh --cpu` / `--sim` invocations spelled out.
 
 **Do NOT emit a Fog branch that only preflights and exits.** A `run_test` whose
 default mode — with a key present — prints "launch under `fog submit`" and returns

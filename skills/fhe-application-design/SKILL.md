@@ -1336,53 +1336,18 @@ add_executable(server server.cpp)      # likewise keygen / encrypt / decrypt
 target_link_libraries(server PRIVATE Niobium::niobium_fhetch)
 ```
 
-**Ship a container wrapper and a `run_test.sh` so the commands stay short.**
-Generate these at the top of the application directory:
+**Ship a container wrapper, a `run_test.sh`, and a `Makefile`** at the top of the
+application directory so the build-and-run commands stay short. Their full spec is
+in `references/run-harness.md`: the three files, the three `run_test` modes with the
+Fog as the default target, the `FOG_TARGET` / `RINGCHK` / `NREC` knobs, the build
+command, and the `clean` target. Two directives there are non-negotiable. The
+default (no-flag) run targets the real Fog and must dispatch the server under `fog
+submit` (never a preflight-only stub). And `run_test` leads its printed output with
+the application's own quality metrics, keeping the FHE-vs-twin comparison and the
+deployment profile as second-tier evidence.
 
-- `run-in-container.sh` — runs a command in the FHE-dev image with the project
-  mounted at `/work` (and `~/.fog` when present, for the Fog mode):
-  ```bash
-  #!/usr/bin/env bash
-  set -euo pipefail
-  IMAGE="${FHE_DEV_IMAGE:-ghcr.io/niobiuminc/fhe-dev:v0.13.0}"
-  FOG=(); [ -d "$HOME/.fog" ] && FOG=(-v "$HOME/.fog:/root/.fog")
-  exec docker run --rm -v "$PWD":/work -w /work "${FOG[@]}" "$IMAGE" bash -c "$*"
-  ```
-  Give it a `--help` (and bare no-arg) path that prints the common invocations —
-  `./run_test.sh`, `./run_test.sh --cpu`, `./run_test.sh --sim`, `./run_test.sh
-  --help`, plus the build command — so a user finds the modes without opening the file.
-- `run_test.sh [--sim|--cpu]` — orchestrates keygen -> encrypt -> server ->
-  decrypt across a client home and a server home (the server refuses to start if a
-  secret key is in its home; include that negative test), forwards the mode to
-  `server`, then reports results in two tiers. **Lead with the application's own
-  quality metrics**: the model's task performance on the decrypted outputs, the
-  numbers a user weighing FHE for this workload would look at first (accuracy, area
-  under the curve, error distribution, or decision counts, as fits the task).
-  Present the FHE-specific comparison (decrypted output against the faithful twin,
-  the encryption error) and the deployment profile (timings, boundary sizes, peak
-  server memory) below that, as second-tier evidence. With **no flag it targets the
-  Fog** (Stage 10): it preflights
-  for an API key (printing the sign-in / sign-up pointer if none is found), and with a
-  key present **must dispatch the server under `fog submit … --target=`** — a
-  print-and-exit stub is incomplete (see `references/niobium-client-fog-variant.md`
-  for the concrete call). The Fog target **defaults to the real Fog (`FOG`), never a
-  simulator** — `FOG_TARGET=FUNC_SIM` is an explicit hardware-free opt-in. `--sim`
-  and `--cpu` select the explicit local-validation runs. Give `run_test.sh` a
-  `-h`/`--help` that lists the three modes and the `FOG_TARGET` / `RINGCHK` / `NREC`
-  env knobs.
-- `Makefile` — a `clean` target that removes everything a build or a run regenerates:
-  the `build/` tree, the per-run homes (`run_*/` and any root `client_home/` /
-  `server_home/`), and the `*_server_workload_*/` FHETCH trace dirs — the same set
-  `.gitignore` lists. Keep the paths in sync with what the scripts actually create.
-
-Build once, then validate locally on CPU, all through the wrapper:
-
-```bash
-./run-in-container.sh "cmake -S . -B build \
-    -DCMAKE_PREFIX_PATH='/opt/niobium-client/vendor/lib/niobium-client;/opt/niobium-client/vendor/lib/openfhe' \
-    && cmake --build build -j"
-./run-in-container.sh "./run_test.sh --cpu"
-```
+Build once, then validate locally on CPU with `./run_test.sh --cpu` before moving
+on.
 
 The client programs (keygen/encrypt/decrypt) never open a session, but linking
 them the same way is harmless. Enable PKE, KEYSWITCH, and LEVELEDSHE features on
@@ -1699,6 +1664,7 @@ self-contained and can be read independently.
 | `references/fhe-what-fhe-can-and-cannot-do.md` | Stage 2: assessing whether a workload is FHE-feasible |
 | `references/fhe-scheme-selection.md` | Stage 4: choosing between CKKS, BFV, and BGV |
 | `references/building-your-first-fhe-application.md` | Stages 3, 6, 8: the development checklist from plaintext through implementation |
+| `references/run-harness.md` | Stages 8, 10: the generated run scaffold (run-in-container.sh, run_test.sh with its three run modes, metrics, and env vars, and the Makefile clean target) |
 | `references/implementing-with-nb-dsl.md` | Stage 8 (optional DSL path): implementing the design in the `nb` FHE DSL (niobium-client) — stage-to-construct mapping, workflow, pitfalls, limitations |
 | `references/niobium-client-fog-variant.md` | Stage 10: running the niobium-client Fog deployment (`app/`) of a validated OpenFHE app (`app/` layout, the `niobium::compiler()` recording pattern, the in-container build, simulation verification, trace submission) |
 | `references/fhe-application-dialogue.md` | Stages 3–8: a worked example showing all steps for a real anomaly detection application |
