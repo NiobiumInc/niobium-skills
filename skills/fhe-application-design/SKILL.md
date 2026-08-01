@@ -1324,7 +1324,7 @@ target_link_libraries(server PRIVATE Niobium::niobium_fhetch)
 ```
 
 **Ship a container wrapper and a `run_test.sh` so the commands stay short.**
-Generate two scripts in `fhe-design/`:
+Generate these in `fhe-design/`:
 
 - `run-in-container.sh` — runs a command in the FHE-dev image with the project
   mounted at `/work` (and `~/.fog` when present, for the Fog mode):
@@ -1352,6 +1352,10 @@ Generate two scripts in `fhe-design/`:
   and `--cpu` select the explicit local-validation runs. Give `run_test.sh` a
   `-h`/`--help` that lists the three modes and the `FOG_TARGET` / `RINGCHK` / `NREC`
   env knobs.
+- `Makefile` — a `clean` target that removes everything a build or a run regenerates:
+  the `build/` tree, the per-run homes (`run_*/` and any root `client_home/` /
+  `server_home/`), and the `*_server_workload_*/` FHETCH trace dirs — the same set
+  `.gitignore` lists. Keep the paths in sync with what the scripts actually create.
 
 Build once, then validate locally on CPU, all through the wrapper:
 
