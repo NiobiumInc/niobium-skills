@@ -141,6 +141,22 @@ The Fog build must clear the **same** bar as the CPU app, plus a free extra:
 
 ## Caveats and notes
 
+- **A `--sim` run that passed `--cpu` but diverges is almost always one of two
+  authoring slips, not a recorder or design fault.** The FHETCH recorder reproduces
+  in-circuit `EvalLogistic` / `EvalChebyshev*` and rotations bit-identically; when a
+  recorded run misbehaves, check these first:
+  - **Tag every plaintext you build before `start()`.** Encode and `tag_input` any
+    plaintext operands you construct (slot masks, hand-built coefficient plaintexts)
+    *before* the recording `start()`, or replay reads uninitialized values — symptom
+    `[FHETCH_SIM] ... read from uninitialized address` and a wrong result. The library's
+    own internal `EvalLogistic` / `EvalChebyshev*` coefficient plaintexts are captured
+    automatically; only the operands *you* create need tagging.
+  - **Keep every slot fed to an in-circuit activation within its `[lo,hi]` interval.**
+    Zero or isolate the non-target slots (e.g. multiply by a slot-0 mask) before
+    `EvalLogistic` / `EvalChebyshev*`, or `Decode` fails with "approximation error too
+    high" — on plain OpenFHE as well as on replay, since the Chebyshev fit is only valid
+    in range.
+
 - **Local-sim cost.** Deep circuits (e.g. a high-degree Chebyshev over many
   units) expand to hundreds of thousands of polynomial-level instructions; the
   local `fhetch_sim` replay can take tens of seconds and gigabytes. To prove the
