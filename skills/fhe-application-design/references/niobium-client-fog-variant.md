@@ -136,18 +136,25 @@ key is present, `run_test`'s no-flag path **must execute the server through
 `--target`:
 
 ```bash
-fog submit ./build/<app>_server <server_home> --target="${FOG_TARGET:?set a Fog target}"
+FOG_TARGET="${FOG_TARGET:-FOG}"   # the real Niobium Fog; FUNC_SIM = hardware-free simulator
+fog submit ./build/<app>_server <server_home> --target="$FOG_TARGET"
 ```
 
 `fog submit` provisions a Fog job, wires `NBCC_FHETCH_SERVER` to the assigned
 worker, and runs your server against it; the server records the trace, dispatches
 `replay()` to the worker, and reconstructs the result locally — so the rest of the
 pipeline (copy `ct_result` back → decrypt → compare vs the twin) is identical to the
-`--cpu` / `--sim` path. `--target` is required: **`FUNC_SIM`** is the Fog's
-functional simulator (safe, no hardware); a hardware/compiler target is used for a
-real deployment. (No `--no-ring-dim-check` here — the ring-dim guard is what would
+`--cpu` / `--sim` path. `--target` is required, and it **defaults to the real Fog
+(`FOG`) — never a simulator**: `FUNC_SIM` is an explicit hardware-free
+functional-simulator alternative (`FOG_TARGET=FUNC_SIM`) for a no-hardware check,
+not the default. (No `--no-ring-dim-check` here — the ring-dim guard is what would
 catch an insecure or hardware-incompatible ring before it dispatches, and at
 N = 2^16 it passes anyway; the Fog is the worst place to have bypassed it.)
+
+The generated wrappers must be self-documenting: `run_test.sh` takes `-h`/`--help`
+listing its modes (no-flag Fog / `--cpu` / `--sim`) and env knobs (`FOG_TARGET`,
+`RINGCHK`, `NREC`); `run-in-container.sh` takes `--help` echoing the same, with the
+`./run_test.sh --cpu` / `--sim` invocations spelled out.
 
 **Do NOT emit a Fog branch that only preflights and exits.** A `run_test` whose
 default mode — with a key present — prints "launch under `fog submit`" and returns

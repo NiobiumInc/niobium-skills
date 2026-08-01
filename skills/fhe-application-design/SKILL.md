@@ -1335,6 +1335,9 @@ Generate two scripts in `fhe-design/`:
   FOG=(); [ -d "$HOME/.fog" ] && FOG=(-v "$HOME/.fog:/root/.fog")
   exec docker run --rm -v "$PWD":/work -w /work "${FOG[@]}" "$IMAGE" bash -c "$*"
   ```
+  Give it a `--help` (and bare no-arg) path that prints the common invocations —
+  `./run_test.sh`, `./run_test.sh --cpu`, `./run_test.sh --sim`, `./run_test.sh
+  --help`, plus the build command — so a user finds the modes without opening the file.
 - `run_test.sh [--sim|--cpu]` — orchestrates keygen -> encrypt -> server ->
   decrypt across a client home and a server home (the server refuses to start if a
   secret key is in its home; include that negative test), forwards the mode to
@@ -1344,8 +1347,11 @@ Generate two scripts in `fhe-design/`:
   for an API key (printing the sign-in / sign-up pointer if none is found), and with a
   key present **must dispatch the server under `fog submit … --target=`** — a
   print-and-exit stub is incomplete (see `references/niobium-client-fog-variant.md`
-  for the concrete call). `--sim` and `--cpu` select the explicit local-validation
-  runs.
+  for the concrete call). The Fog target **defaults to the real Fog (`FOG`), never a
+  simulator** — `FOG_TARGET=FUNC_SIM` is an explicit hardware-free opt-in. `--sim`
+  and `--cpu` select the explicit local-validation runs. Give `run_test.sh` a
+  `-h`/`--help` that lists the three modes and the `FOG_TARGET` / `RINGCHK` / `NREC`
+  env knobs.
 
 Build once, then validate locally on CPU, all through the wrapper:
 
