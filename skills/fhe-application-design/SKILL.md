@@ -192,10 +192,11 @@ Three one-time steps:
 
 1. Install Docker (Docker Desktop on macOS/Windows) if it isn't already present
    — the only unavoidable local install.
-2. Build the image from the skill's `environment/` directory:
-   `docker build -t ghcr.io/niobiuminc/fhe-dev:v0.13.0 environment`. The first
-   build clones niobium-client and compiles the instrumented OpenFHE from source,
-   which is the one heavy step; allow time for it.
+2. Get the FHE-dev image: pull the prebuilt image from the GitHub Container Registry
+   (`docker pull ghcr.io/niobiuminc/fhe-dev:v0.13.0`), or build it from the skill's
+   `environment/` directory (`docker build -t ghcr.io/niobiuminc/fhe-dev:v0.13.0
+   environment`). The first build clones niobium-client and compiles the instrumented
+   OpenFHE from source, which is the one heavy step; allow time for it.
 3. Run the smoke test:
    `docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.13.0 make test-release`. It
    takes the bundled examples through record, simulate, and decrypt; a green

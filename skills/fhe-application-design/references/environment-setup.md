@@ -49,9 +49,18 @@ Verify:
 docker --version
 ```
 
-### 2. Build the FHE-dev image
+### 2. Get the FHE-dev image
+
+Pull the prebuilt image from the GitHub Container Registry, or build it from the
+skill's `environment/` directory (the path depends on where the skill is installed,
+e.g. `.claude/skills/fhe-application-design/environment`, or
+`skills/fhe-application-design/environment` from a clone of the skill repo):
 
 ```bash
+# Pull the prebuilt image from ghcr:
+docker pull ghcr.io/niobiuminc/fhe-dev:v0.13.0
+
+# Or build it from the skill's environment/ directory:
 docker build -t ghcr.io/niobiuminc/fhe-dev:v0.13.0 skills/fhe-application-design/environment
 ```
 
