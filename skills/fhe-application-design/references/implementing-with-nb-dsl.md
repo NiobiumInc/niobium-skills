@@ -1,7 +1,8 @@
 # Implementing the Design in the `nb` FHE DSL
 
-This reference covers the **Stage 8 DSL implementation path**: turning the design
-produced by Stages 1–6 into a working application using the `nb` domain-specific
+This reference covers the **Stage 8 DSL implementation path**. Enter it at
+Stage 8, after Stages 0–7 in SKILL.md are complete: it turns the validated design
+and its faithful twin into a working application using the `nb` domain-specific
 language and its `nbc` cross-compiler, which live in the
 [niobium-client](https://github.com/NiobiumInc/niobium-client) repository under
 `dsl_fhe/`. The DSL compiles `.niob` source to OpenFHE C++ and generates

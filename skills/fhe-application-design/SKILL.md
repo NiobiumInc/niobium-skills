@@ -42,9 +42,10 @@ which front door they want:
 > (b) OpenFHE directly (for experienced FHE practitioners): hand-written OpenFHE,
 >     following the full stage-by-stage design below.
 
-For (a), follow `references/implementing-with-nb-dsl.md`, the DSL front door. For
-(b), continue with the stages below. Both paths target the Niobium Fog and differ
-only in how the program is authored.
+Both paths follow every stage below; the choice takes effect at Stage 8, where
+(a) implements the validated design per `references/implementing-with-nb-dsl.md`
+and (b) hand-writes OpenFHE per `references/implementing-with-openfhe.md`. Both
+target the Niobium Fog and differ only in how the program is authored.
 
 Follow the stages below in order. Each stage has a brief description here in
 the SKILL.md, with pointers to reference files that contain deeper guidance.
