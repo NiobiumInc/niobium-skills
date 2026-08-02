@@ -620,6 +620,17 @@ Three field notes on rung c (from applying it in practice):
   set plus a safety margin, and document the residual escape risk (Stage 9)
   with its packing-dependent blast radius and mitigation.
 
+When is a bound cheap enough to prove? The envelope preference above applies
+where interval bounds go uselessly loose (unbounded activations, long
+multiplicative chains, recurrent state). But whenever the operand is one step
+from a known hard range (a pre-activation one linear layer from the committed
+input box, a normalized inner product, a squared distance over a box, a sum of
+bounded slots, a layer fed by a saturating activation), the worst-case bound is
+one line of arithmetic. Sweep the provable interval first and take it if the
+affordable degree still meets the floor there: under batched packing it makes
+the airtight-filter requirement hold against the input contract rather than the
+sample. Otherwise fall back to the envelope plus margin as above.
+
 #### Filter, don't force: the two-threshold check and the composition guard
 
 When a tight domain is accurate but a few records escape it, the right move is to
