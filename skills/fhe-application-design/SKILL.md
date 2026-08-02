@@ -1599,10 +1599,11 @@ rewrite from scratch here.
    Niobium Fog, then `--cpu` and `--sim` for local validation), each with its
    command, expected output, and resource needs. Include how to run the application
    as a client/server deployment: the two-process run and its two-host variant.
-   Include the error ledger: the results report's three rows (reference vs ground
-   truth, twin vs reference, FHE vs twin), each residual attributed to its actual
-   source (model change, polynomial approximation, fixed-point quantization,
-   encryption noise); do not fold quantization into the polynomial row. A
+   Write the error ledger into the README as a table: the rows reference vs
+   ground truth, twin vs reference, and FHE vs twin, each residual attributed to
+   its actual source (model change, polynomial approximation, fixed-point
+   quantization, encryption noise). Do not fold quantization into the polynomial
+   row. A
    recipient with Docker and the repository should need nothing else to reproduce
    the run. *(Commands and structure drafted at the gate; here fill the "expected
    output" block with the measured timings, peak RSS, and error.)*
