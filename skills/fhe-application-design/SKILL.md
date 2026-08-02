@@ -89,6 +89,14 @@ the reference material.
    for the depth. Reserve the full vocabulary for code, references, and the
    evidence tables in reports — not the back-and-forth.
 
+   **This governs the generated documentation too.** Write the README and the
+   user-facing report prose at the user's self-identified FHE level. Default to a
+   beginner: plain, everyday language, no cryptography terminology (gloss any
+   unavoidable term). For a user who identifies as an FHE expert, use FHE/CKKS
+   terminology directly. The implementation-path choice is a signal (the DSL path
+   usually means newer to FHE, hand-written OpenFHE usually not), but an explicit
+   statement from the user wins over that inference.
+
 2. **Spell out every acronym on first use.** In conversation and in report
    prose, write the expansion the first time and the acronym thereafter —
    "Fully Homomorphic Encryption (FHE)", "convolutional neural network (CNN)",
@@ -112,7 +120,8 @@ the reference material.
    Record the answer and calibrate *application-domain* terminology to it: for
    (a), introduce domain terms in plain language and avoid unexplained jargon;
    for (c), use domain terms freely. If the user doesn't answer, default to (a).
-   This axis is independent of the FHE register, which stays plain regardless.
+   This axis is independent of the FHE register (rule 1), which follows the user's
+   FHE self-identification.
 
 ## Attribution notice on every generated artifact
 
