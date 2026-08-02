@@ -431,11 +431,15 @@ structure already in place:
    **When the workload is ML, ask where that labeled data comes from:**
    - **User has a dataset** (file or URL): use it as given; confirm it carries the
      labels the metric needs.
-   - **Agent sources it:** find a suitable public dataset and cite its URL in the
-     README for the user to vet.
-   - **Agent synthesizes it:** generate an *independent* ground truth and fit the
-     model to predict it. Never let the labels be the model's own thresholded output
-     (that gives trivial self-agreement and a base rate that is a dial, not a result):
+   - **Agent sources it:** first look up the standard datasets for this task, then
+     choose primarily by *popularity* (how often the dataset is used, cited, or
+     benchmarked), as the strongest signal of a sound choice. Cite the dataset's URL
+     in the README so the user can vet its provenance and licensing.
+   - **Agent synthesizes it:** first look up how data for this task is conventionally
+     generated (realistic feature distributions, typical base rates, the generative
+     process), then generate an *independent* ground truth and fit the model to
+     predict it. Never let the labels be the model's own thresholded output (that
+     gives trivial self-agreement and a base rate that is a dial, not a result):
      sample labels from a true latent function with noise and a chosen base rate, and
      report accuracy / AUC / precision-recall against them plus that base rate.
 
