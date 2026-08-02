@@ -64,3 +64,8 @@ OpenFHE result directly; `--sim` and the default both wrap `run_circuit(...)` in
 `niobium::compiler()` session to generate the trace, then reconstruct the result
 locally through `fhetch_sim` (`--sim`) or from the Fog (default, Stage 10).
 Keeping the circuit in one place means the modes cannot diverge.
+
+The `niobium::compiler()` session calls the `--sim` and default modes need are in
+[niobium-client-fog-variant.md](niobium-client-fog-variant.md) under "The
+recording pattern". Author the server with them now, so the one binary supports
+all three modes.
