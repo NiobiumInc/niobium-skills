@@ -1726,6 +1726,15 @@ Throughout the design process, keep these principles in mind:
   correctly in the clear before introducing encryption. Every subsequent
   version is tested against this reference.
 
+- **Application quality is the goal; twin fidelity is a diagnostic.** The
+  measure of an application is its task quality against ground truth
+  (accuracy, precision/recall, error in real units). The encrypted-vs-twin
+  comparison exists to isolate encryption error so a quality delta can be
+  attributed to the right stage; it can only confirm that encryption preserved
+  whatever quality the design already had. Lead every conversation, README,
+  report, and printed summary with task quality, and present fidelity as
+  supporting evidence.
+
 - **The faithful twin is the executable spec.** Distinct from the ideal
   plaintext reference: the twin runs the exact circuit (same polynomials,
   quantization, packing) so it predicts encrypted behavior modulo noise. It is
