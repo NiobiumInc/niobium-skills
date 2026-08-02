@@ -33,19 +33,39 @@ layout, parameter selection, and implementation.
 
 ## How to Use This Skill
 
-**Choose the implementation path first.** Before starting the stages, ask the user
-which front door they want:
+**Two choices up front.** Before starting the stages, ask the user two questions and
+record the answers.
+
+First, their FHE experience. This sets the register for the whole conversation and
+for the generated documentation (see "Communicating with the user"):
+
+> How much have you worked with Fully Homomorphic Encryption (FHE)?
+> (a) New to it, keep the explanation in plain terms
+> (b) Experienced, use FHE terminology freely
+
+Second, which implementation path to build:
 
 > How do you want to build this application?
-> (a) The Niobium DSL (recommended if you are newer to FHE): a higher-level language
->     that expresses the computation and generates the OpenFHE program for you.
-> (b) OpenFHE directly (for experienced FHE practitioners): hand-written OpenFHE,
->     following the full stage-by-stage design below.
+> (a) The Niobium DSL: a higher-level language that expresses the computation and
+>     generates the OpenFHE program for you. It is an alpha-stage tool.
+> (b) OpenFHE directly: hand-written OpenFHE, following the full stage-by-stage
+>     design below. It is a robust, mature library.
 
-Both paths follow every stage below; the choice takes effect at Stage 8, where
-(a) implements the validated design per `references/implementing-with-nb-dsl.md`
+Recommend (a) the DSL to a user new to FHE, and state plainly that the DSL is
+alpha-stage while OpenFHE is robust so they can weigh it. The two choices are
+independent: an FHE beginner may still choose OpenFHE, and an expert may choose the
+DSL.
+
+Both paths follow every stage below; the language choice takes effect at Stage 8,
+where (a) implements the validated design per `references/implementing-with-nb-dsl.md`
 and (b) hand-writes OpenFHE per `references/implementing-with-openfhe.md`. Both
 target the Niobium Fog and differ only in how the program is authored.
+
+**Save the two answers as a memory** if your AI assistant supports one. Ask the user
+whether to store it for this project or globally for the assistant (offer both only
+where your assistant distinguishes the two). Record the FHE experience level and the
+chosen implementation path so a later session resumes at the right register and path
+without re-asking.
 
 Follow the stages below in order. Each stage has a brief description here in
 the SKILL.md, with pointers to reference files that contain deeper guidance.
@@ -91,11 +111,10 @@ the reference material.
    evidence tables in reports — not the back-and-forth.
 
    **This governs the generated documentation too.** Write the README and
-   user-facing report prose at the user's self-identified FHE level: beginner by
-   default (plain language, no cryptography terminology, gloss any unavoidable
-   term), full FHE/CKKS terminology for a self-identified expert. The
-   implementation-path choice is a signal (the DSL usually means newer to FHE),
-   but an explicit statement from the user wins.
+   user-facing report prose at the FHE experience level the user gave in the
+   up-front question: beginner by default (plain language, no cryptography
+   terminology, gloss any unavoidable term), full FHE/CKKS terminology for a
+   self-identified expert.
 
 2. **Spell out every acronym on first use.** In conversation and in report
    prose, write the expansion the first time and the acronym thereafter —
@@ -1323,7 +1342,7 @@ blanks and confirming the pre-written docs*, not writing from scratch.
 Only after the twin is validated and approved. This stage has a **path-independent
 contract**: the four-program architecture, the deliverables, and the validation
 below apply however you build. Implement it via the path chosen up front (see
-"Choose the implementation path first"):
+"Two choices up front"):
 
 - **OpenFHE C++** — hand-written OpenFHE. The build mechanics (CMake, the shared
   `run_circuit`, serialization, context features) are in
