@@ -1176,6 +1176,13 @@ the DSL path, its compiler also surfaces this frontier at compile time —
 Chebyshev depth charging and a params note mapping logQ to the minimum N per
 security level.)
 
+**Pick the cheapest passing point.** Prefer the lowest approximation degree (and
+depth) that meets the goal floor; precision beyond the requirement is overkill
+paid for in depth, ciphertext size, and server time. A higher degree is justified
+only by a stated program attribute the cheaper point misses (an accuracy,
+precision/recall, or decision-agreement target); when you take one, name the
+attribute that required it.
+
 **When the sweep cannot win, walk the Stage 3 ladder — ending in a model
 change.** If the whole in-budget sweep is exhausted and no point meets the
 accuracy floor — typically because an activation's operand range is too wide for
@@ -1580,7 +1587,11 @@ rewrite from scratch here.
    inputs; and the run targets **led by the Fog** (a bare `run_test.sh` targets the
    Niobium Fog, then `--cpu` and `--sim` for local validation), each with its
    command, expected output, and resource needs. Include how to run the application
-   as a client/server deployment: the two-process run and its two-host variant. A
+   as a client/server deployment: the two-process run and its two-host variant.
+   Include the error ledger: the results report's three rows (reference vs ground
+   truth, twin vs reference, FHE vs twin), each residual attributed to its actual
+   source (model change, polynomial approximation, fixed-point quantization,
+   encryption noise); do not fold quantization into the polynomial row. A
    recipient with Docker and the repository should need nothing else to reproduce
    the run. *(Commands and structure drafted at the gate; here fill the "expected
    output" block with the measured timings, peak RSS, and error.)*
