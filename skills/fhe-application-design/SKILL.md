@@ -1267,26 +1267,29 @@ blanks and confirming the pre-written docs*, not writing from scratch.
 
 ## Stage 8: Implement the FHE Program
 
-Only after the twin is validated and approved. Implement in **OpenFHE C++** —
-the single first-class path here: the models this skill runs on are
-OpenFHE-native (far more public OpenFHE than DSL code to learn from), so it is
-the most reliable target.
+Only after the twin is validated and approved. This stage has a **path-independent
+contract**: the four-program architecture, the deliverables, and the validation
+below apply however you build. Implement it via the path chosen up front (see
+"Choose the implementation path first"):
+
+- **OpenFHE C++** — hand-written OpenFHE. The build mechanics (CMake, the shared
+  `run_circuit`, serialization, context features) are in
+  `references/implementing-with-openfhe.md`.
+- **The `nb` DSL** — express the computation in ~3 short `.niob` files and let the
+  `nbc` cross-compiler generate the same four-program pipeline (the split,
+  serialization, CMake, key generation, record/replay), with compiler-enforced
+  `@client`/`@server` trust boundaries. It is CKKS-only. See
+  `references/implementing-with-nb-dsl.md`.
+
+Both paths produce the same four-program structure and must satisfy the deliverable
+contract in this stage (`run_test`, the client/server demo, client-side bounds
+enforcement, twin validation). A BFV/BGV design uses the OpenFHE path.
 
 **Build in the current working directory by default.** Generate the application
 in your current working directory unless the user explicitly directs otherwise.
 Do not create files inside the niobium-client repository (e.g., under
 `dsl_fhe/examples/`) or modify its `Makefile`/build files **unless the user
 explicitly asks to do that**.
-
-**Optional DSL path.** Niobium also ships an `nb` FHE DSL (in
-[niobium-client](https://github.com/NiobiumInc/niobium-client)'s `dsl_fhe/`) that
-generates the whole pipeline — the four-program split, serialization, CMake, key
-generation, record/replay — from ~3 short `.niob` files, with compiler-enforced
-`@client`/`@server` trust boundaries. It is CKKS-only and has far fewer public
-examples than OpenFHE, so treat it as an optional convenience, not the default.
-If you use it, **read `references/implementing-with-nb-dsl.md`** for the
-design-output → DSL mapping, workflow, and limitations. The rest of this stage
-describes the OpenFHE implementation the DSL would otherwise generate.
 
 ### The four-program architecture
 
@@ -1319,22 +1322,13 @@ can be deployed independently:
    (Stage 7). Validation against the twin belongs to run_test (item 5 below),
    not to decrypt — keep the production binary free of test-only inputs.
 
-Build the four programs by linking the installed SDK through
-`find_package(NiobiumFhetch)`. That single package pulls in `libnbfhetch`, the
-instrumented OpenFHE headers and libraries, and the `openfhe_cprobe_*` hooks, so
-there is no manual OpenFHE wiring. **Use this `CMakeLists.txt`** (verified in the
-image):
-
-```cmake
-cmake_minimum_required(VERSION 3.16)
-project(app CXX)
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-find_package(NiobiumFhetch REQUIRED)
-
-add_executable(server server.cpp)      # likewise keygen / encrypt / decrypt
-target_link_libraries(server PRIVATE Niobium::niobium_fhetch)
-```
+**Enforce the declared input bounds on the client path.** Whatever Stage 5 chose
+(reject out-of-domain records, or winsorize them to the bounds), the client applies
+it at run time: the `encrypt` program, or the client harness that feeds it, reads
+the committed bounds file and rejects or clips before encrypting. A committed bounds
+file that no program reads is not enforcement; an out-of-domain input then sails
+into the circuit and breaks decode-safety silently. This holds on both
+implementation paths.
 
 **Ship a container wrapper, a `run_test.sh`, and a `Makefile`** at the top of the
 application directory so the build-and-run commands stay short. Their full spec is
@@ -1349,35 +1343,11 @@ deployment profile as second-tier evidence.
 Build once, then validate locally on CPU with `./run_test.sh --cpu` before moving
 on.
 
-The client programs (keygen/encrypt/decrypt) never open a session, but linking
-them the same way is harmless. Enable PKE, KEYSWITCH, and LEVELEDSHE features on
-the crypto context, plus ADVANCEDSHE for Chebyshev evaluation or advanced rotation
-patterns. Use OpenFHE's serialization API (Serial::SerializeToFile /
-Serial::DeserializeFromFile) for all inter-program data exchange.
-
-(On a niobium-client older than the `find_package` Config, link the target the
-manual way instead: `find_package(OpenFHE)` +
-`include(<prefix>/lib/cmake/NiobiumFhetch/NiobiumFhetchTargets.cmake)` +
-`target_link_directories(server PRIVATE ${OpenFHE_LIBDIR})`.)
-
-**Factor the circuit into a shared `run_circuit()`.** Put the homomorphic
-circuit body in one function in `common.hpp`:
-
-```cpp
-// common.hpp: the circuit body, called by the server in both run modes
-inline Ciphertext<DCRTPoly> run_circuit(
-        CryptoContext<DCRTPoly>& cc, const Model& m,
-        const std::vector<Ciphertext<DCRTPoly>>& x) {
-    // ... the exact forward pass (Linear -> activation -> Linear -> ...) ...
-    return result;
-}
-```
-
-The server calls `run_circuit(...)` in every mode. On `--cpu` it serializes the
-OpenFHE result directly; `--sim` and the default both wrap `run_circuit(...)` in a
-`niobium::compiler()` session to generate the trace, then reconstruct the result
-locally through `fhetch_sim` (`--sim`) or from the Fog (default, Stage 10).
-Keeping the circuit in one place means the modes cannot diverge.
+**Factor the circuit into one shared function** so every run mode (CPU, the
+simulator, and the Fog) executes the identical math and the modes cannot diverge.
+Each path's reference shows how: the shared `run_circuit` in
+`references/implementing-with-openfhe.md`, shared circuit functions in
+`references/implementing-with-nb-dsl.md`.
 
 **Why four programs:** This structure makes the trust boundaries from Stage 1
 concrete in the code. Each boundary between programs is a serialization point
@@ -1665,7 +1635,8 @@ self-contained and can be read independently.
 | `references/fhe-scheme-selection.md` | Stage 4: choosing between CKKS, BFV, and BGV |
 | `references/building-your-first-fhe-application.md` | Stages 3, 6, 8: the development checklist from plaintext through implementation |
 | `references/run-harness.md` | Stages 8, 10: the generated run scaffold (run-in-container.sh, run_test.sh with its three run modes, metrics, and env vars, and the Makefile clean target) |
-| `references/implementing-with-nb-dsl.md` | Stage 8 (optional DSL path): implementing the design in the `nb` FHE DSL (niobium-client) — stage-to-construct mapping, workflow, pitfalls, limitations |
+| `references/implementing-with-openfhe.md` | Stage 8 (OpenFHE path): the OpenFHE C++ build mechanics — CMake/linking, context features and serialization, the shared `run_circuit` |
+| `references/implementing-with-nb-dsl.md` | Stage 8 (DSL path): implementing the design in the `nb` FHE DSL (niobium-client) — stage-to-construct mapping, the deliverable contract in DSL form, workflow, pitfalls, limitations |
 | `references/niobium-client-fog-variant.md` | Stage 10: running the niobium-client Fog deployment (`app/`) of a validated OpenFHE app (`app/` layout, the `niobium::compiler()` recording pattern, the in-container build, simulation verification, trace submission) |
 | `references/fhe-application-dialogue.md` | Stages 3–8: a worked example showing all steps for a real anomaly detection application |
 | `references/example-set-membership.md` | Stages 5–9: complete CKKS design spec and implementation (squared distance, iterated squaring, column-major packing, threat model) |

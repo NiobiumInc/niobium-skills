@@ -1,13 +1,25 @@
 # Implementing the Design in the `nb` FHE DSL
 
-This reference covers **Stage 8 (the optional DSL path)**: turning the design produced by
-Stages 1–6 into a working application using the `nb` domain-specific language
-and its `nbc` cross-compiler, which live in the
+This reference covers the **Stage 8 DSL implementation path**: turning the design
+produced by Stages 1–6 into a working application using the `nb` domain-specific
+language and its `nbc` cross-compiler, which live in the
 [niobium-client](https://github.com/NiobiumInc/niobium-client) repository under
 `dsl_fhe/`. The DSL compiles `.niob` source to OpenFHE C++ and generates
 everything the raw-C++ track builds by hand: the four-program architecture,
 serialization, CMake, key generation matched to the operations used, and
 Niobium record/replay instrumentation.
+
+The DSL is an alpha-stage tool and actively evolving. It covers the common CKKS
+designs this skill targets; a few constructs are not yet available (see *What still
+requires raw OpenFHE*) and the generated code is not yet fully optimized. The
+limitations noted throughout are current-state on a maturing tool, not permanent
+verdicts, and are worth working through.
+
+Stage 8's contract in SKILL.md is **path-independent**: the same deliverables
+(`run_test` and the run harness, the client/server two-process demo, client-side
+input-bounds enforcement, twin validation, and Fog deployment) are required on this
+path too. The [deliverable contract in DSL form](#the-stage-8-deliverable-contract-in-dsl-form)
+below maps each one to its DSL realization; produce them all.
 
 Authoritative language docs (read as needed; paths relative to `dsl_fhe/`):
 
@@ -41,7 +53,45 @@ to transcribe the design:
 | Deferred relinearization (5) | `a *_norelin b` accumulation followed by `relin(acc)` |
 | Four-program architecture (7) | One `@stage("name")` function per program — keygen / encrypt / server-compute / decrypt each becomes a standalone binary with CLI parsing, serialization, and (for `@server @hardware` stages) record/replay instrumentation |
 | run_test (7) | Run the generated stage binaries in order, verifying against the plaintext reference (or a `test-<example>` Makefile target, if you contribute the app as an in-repo example) |
-| Protocol spec (8) | Largely self-documenting: domains + wire types + `reads`/`writes` state the message flow; write the threat-model prose in the example's README |
+| Protocol spec + client/server demo (8, 9) | The domains, wire types, and `reads`/`writes` clauses document the message flow; you still write the threat-model prose and stand up the required two-process demo. See the deliverable contract below |
+
+## The Stage 8 deliverable contract, in DSL form
+
+Stage 8's deliverables are path-independent (SKILL.md). The DSL realizes each as
+follows; produce all of them.
+
+- **Trust boundary and negative test.** The `@client` / `@server` split is the
+  primary guarantee: a `@server` stage that references `SecretKey` or calls
+  `decrypt()` is a compile error, so the server binary cannot touch the secret key
+  by construction. Also ship the runtime guard the contract asks for: provision the
+  server home with no `sk.bin`, and have `run_test` assert its absence before
+  launching the server. (The compile-time split is stronger than the OpenFHE runtime
+  refusal for the leak property; the runtime guard is what a reviewer checks, so keep
+  both.)
+- **Client-side input-bounds enforcement.** The DSL sees only fixed-length numeric
+  vectors, so enforce the Stage-5 bounds decision (reject or winsorize) in the
+  `harness/` before `encrypt()`, and commit the bounds file. An out-of-domain input
+  must be clipped or rejected there, never silently encrypted, the same requirement
+  the OpenFHE `encrypt` program carries.
+- **`run_test` and the run harness.** Generate the same `run-in-container.sh`,
+  `run_test.sh` (the three modes with the Fog as the default target), and `Makefile`
+  described in `run-harness.md`. The DSL gives you the comparison for free: for every
+  twinnable stage the compiler emits a `<stage>_ref` cleartext twin, so `run_test`
+  compares the encrypted run against `_ref` alongside the harness's plaintext
+  reference. Build the generated `nb_out/` project, run the stage binaries in order,
+  and report the same metrics: the application's own quality first, then FHE-vs-twin
+  error, then the deployment profile. Wire `fhetch_sim` (`NBCC_FHETCH_SIM`,
+  `LD_LIBRARY_PATH`) into the `--sim` mode.
+- **Client/server two-process demo.** Required here too. The `@stage` binaries
+  already run as separate processes exchanging serialized files, but stand them up as
+  the contract specifies: two homes, the secret key only client-side, only ciphertext
+  crossing, the server refusing a planted secret key, byte-count logging, and a
+  server home safe to copy to an untrusted host.
+- **Fog deployment.** A `@server @hardware(cache_key: [...])` stage compiles with the
+  Niobium record/replay instrumentation built in, so the default `run_test` dispatch
+  under `fog submit --target=FOG` works the same as the OpenFHE path, with no
+  hand-written `niobium::compiler()` calls. The `--target` rules and the
+  minimum-ring-dim guard in `niobium-client-fog-variant.md` apply unchanged.
 
 ## Workflow
 
@@ -141,7 +191,23 @@ implementations — read the design reference and the DSL code side by side:
    delete the recorded program directory (`*_workload_*`,
    `fhetch_driver_source_*`) to force a fresh record.
 
+6. **Generated keygen is not yet minimal.** As an alpha-stage tool, the codegen does
+   not prune keys tightly yet: it may emit rotation / `EvalSum` (automorphism) keys
+   the design's `requires { add, mul }` does not call for, which can substantially
+   enlarge the server key bundle. This is a current codegen limitation under active
+   improvement, not a design error. If server-bundle size matters, note it and keep
+   the operation set (`requires { ... }`, `slot_sum` usage) as tight as the circuit
+   allows.
+
 ## What still requires raw OpenFHE
+
+For these, follow `implementing-with-openfhe.md` for the OpenFHE you write: a
+whole-app switch (BFV/BGV, bootstrapping, and the rest of this list), or just the
+hand-written C++ behind an `extern_call` when the rest of the app fits the DSL.
+Reach for this once the DSL genuinely cannot express what you need, after the
+toolchain and annotations are working. The generated `nb_out/` is OpenFHE too, so
+this reference also helps you read or debug what the compiler produced. Do not
+hand-edit `nb_out/` to work around the compiler, since it regenerates on recompile.
 
 - **BFV / BGV** — the codegen targets CKKS only.
 - **Transciphering** (Stage 5 output-integrity dual output) — no DSL
