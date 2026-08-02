@@ -10,11 +10,10 @@ everything the raw-C++ track builds by hand: the four-program architecture,
 serialization, CMake, key generation matched to the operations used, and
 Niobium record/replay instrumentation.
 
-The DSL is an alpha-stage tool and actively evolving. It covers the common CKKS
+The DSL is an alpha-stage tool, actively evolving. It covers the common CKKS
 designs this skill targets; a few constructs are not yet available (see *What still
 requires raw OpenFHE*) and the generated code is not yet fully optimized. The
-limitations noted throughout are current-state on a maturing tool, not permanent
-verdicts, and are worth working through.
+limitations noted throughout are current-state, not permanent verdicts.
 
 Stage 8's contract in SKILL.md is **path-independent**: the same deliverables
 (`run_test` and the run harness, the client/server two-process demo, client-side
@@ -66,14 +65,12 @@ follows; produce all of them.
   `decrypt()` is a compile error, so the server binary cannot touch the secret key
   by construction. Also ship the runtime guard the contract asks for: provision the
   server home with no `sk.bin`, and have `run_test` assert its absence before
-  launching the server. (The compile-time split is stronger than the OpenFHE runtime
-  refusal for the leak property; the runtime guard is what a reviewer checks, so keep
-  both.)
+  launching the server. (Keep both: the compile-time split is the stronger
+  guarantee; the runtime guard is what a reviewer checks.)
 - **Client-side input-bounds enforcement.** The DSL sees only fixed-length numeric
   vectors, so enforce the Stage-5 bounds decision (reject or winsorize) in the
-  `harness/` before `encrypt()`, and commit the bounds file. An out-of-domain input
-  must be clipped or rejected there, never silently encrypted, the same requirement
-  the OpenFHE `encrypt` program carries.
+  `harness/` before `encrypt()`, and commit the bounds file; an out-of-domain input
+  must be clipped or rejected there, never silently encrypted.
 - **`run_test` and the run harness.** Generate the same `run-in-container.sh`,
   `run_test.sh` (the three modes with the Fog as the default target), and `Makefile`
   described in `run-harness.md`. The pass criterion is unchanged: encrypted output
@@ -194,23 +191,19 @@ implementations — read the design reference and the DSL code side by side:
    delete the recorded program directory (`*_workload_*`,
    `fhetch_driver_source_*`) to force a fresh record.
 
-6. **Generated keygen is not yet minimal.** As an alpha-stage tool, the codegen does
-   not prune keys tightly yet: it may emit rotation / `EvalSum` (automorphism) keys
-   the design's `requires { add, mul }` does not call for, which can substantially
-   enlarge the server key bundle. This is a current codegen limitation under active
-   improvement, not a design error. If server-bundle size matters, note it and keep
-   the operation set (`requires { ... }`, `slot_sum` usage) as tight as the circuit
-   allows.
+6. **Generated keygen is not yet minimal.** The codegen may emit rotation /
+   `EvalSum` (automorphism) keys the design's `requires { add, mul }` does not call
+   for, which can substantially enlarge the server key bundle. This is a current
+   codegen limitation, not a design error; if bundle size matters, note it and keep
+   `requires { ... }` and `slot_sum` usage as tight as the circuit allows.
 
 ## What still requires raw OpenFHE
 
 For these, follow `implementing-with-openfhe.md` for the OpenFHE you write: a
-whole-app switch (BFV/BGV, bootstrapping, and the rest of this list), or just the
-hand-written C++ behind an `extern_call` when the rest of the app fits the DSL.
-Reach for this once the DSL genuinely cannot express what you need, after the
-toolchain and annotations are working. The generated `nb_out/` is OpenFHE too, so
-this reference also helps you read or debug what the compiler produced. Do not
-hand-edit `nb_out/` to work around the compiler, since it regenerates on recompile.
+whole-app switch, or hand-written C++ behind an `extern_call` when the rest of the
+app fits the DSL. Reach for this only once the DSL genuinely cannot express what
+you need. The generated `nb_out/` is OpenFHE too, so that reference also helps you
+read or debug it; do not hand-edit `nb_out/`, since it regenerates on recompile.
 
 - **BFV / BGV** — the codegen targets CKKS only.
 - **Transciphering** (Stage 5 output-integrity dual output) — no DSL

@@ -35,16 +35,14 @@ Orchestrates keygen → encrypt → server → decrypt across a client home and 
 home (the server refuses to start if a secret key is in its home; include that
 negative test), forwards the mode to `server`, then reports results in two tiers.
 
-**Lead the printed summary with the application's own quality metrics**: the
-model's task performance measured against the ground-truth labels in the test set
-(accuracy, area under the curve, precision/recall, or task-appropriate error), the
-numbers a user weighing FHE for this workload would look at first. This needs a
-labeled test set with real ground truth (see Stage 3 on sourcing it); do not
-substitute the model's output distribution (decision counts, mean score) for
-quality, because without an expected baseline those numbers are not interpretable. Present the FHE-specific
-comparison (decrypted output against the faithful twin, the encryption error) and
-the deployment profile (timings, boundary sizes, peak server memory) below that, as
-second-tier evidence.
+**Lead the printed summary with the application's own quality metrics**: task
+performance measured against the ground-truth labels in the test set (accuracy,
+area under the curve, precision/recall, or task-appropriate error). This needs a
+labeled test set with real ground truth (Stage 3); the model's output distribution
+(decision counts, mean score) is no substitute, since without an expected baseline
+those numbers are not interpretable. Present the FHE comparison (decrypted output
+against the faithful twin) and the deployment profile (timings, boundary sizes,
+peak server memory) below that, as second-tier evidence.
 
 Three run modes:
 

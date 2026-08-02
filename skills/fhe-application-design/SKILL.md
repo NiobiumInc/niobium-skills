@@ -90,13 +90,12 @@ the reference material.
    for the depth. Reserve the full vocabulary for code, references, and the
    evidence tables in reports — not the back-and-forth.
 
-   **This governs the generated documentation too.** Write the README and the
-   user-facing report prose at the user's self-identified FHE level. Default to a
-   beginner: plain, everyday language, no cryptography terminology (gloss any
-   unavoidable term). For a user who identifies as an FHE expert, use FHE/CKKS
-   terminology directly. The implementation-path choice is a signal (the DSL path
-   usually means newer to FHE, hand-written OpenFHE usually not), but an explicit
-   statement from the user wins over that inference.
+   **This governs the generated documentation too.** Write the README and
+   user-facing report prose at the user's self-identified FHE level: beginner by
+   default (plain language, no cryptography terminology, gloss any unavoidable
+   term), full FHE/CKKS terminology for a self-identified expert. The
+   implementation-path choice is a signal (the DSL usually means newer to FHE),
+   but an explicit statement from the user wins.
 
 2. **Spell out every acronym on first use.** In conversation and in report
    prose, write the expansion the first time and the acronym thereafter —
@@ -432,17 +431,17 @@ structure already in place:
    **When the workload is ML, ask where that labeled data comes from:**
    - **User has a dataset** (file or URL): use it as given; confirm it carries the
      labels the metric needs.
-   - **Agent sources it:** first look up the standard datasets for this task, then
-     choose primarily by *popularity* (how often the dataset is used, cited, or
-     benchmarked), as the strongest signal of a sound choice. Cite the dataset's URL
-     in the README so the user can vet its provenance and licensing.
-   - **Agent synthesizes it:** first look up how data for this task is conventionally
-     generated (realistic feature distributions, typical base rates, the generative
-     process), then generate an *independent* ground truth and fit the model to
-     predict it. Never let the labels be the model's own thresholded output (that
-     gives trivial self-agreement and a base rate that is a dial, not a result):
-     sample labels from a true latent function with noise and a chosen base rate, and
-     report accuracy / AUC / precision-recall against them plus that base rate.
+   - **Agent sources it:** look up the standard datasets for this task and choose
+     primarily by *popularity* (usage, citations, benchmarks), the strongest signal
+     of a sound choice; cite the dataset's URL in the README so the user can vet
+     provenance and licensing.
+   - **Agent synthesizes it:** look up how data for this task is conventionally
+     generated (feature distributions, typical base rates), then generate an
+     *independent* ground truth and fit the model to predict it: sample labels from
+     a true latent function with noise and a chosen base rate, never from the
+     model's own thresholded output (trivial self-agreement, and the base rate
+     becomes a dial). Report the task metrics against those labels plus the base
+     rate.
 
    **Pick the metric to match the task.** For rare-class workloads (fraud,
    intrusion, anomaly detection) raw accuracy and even decision-agreement are
@@ -1347,13 +1346,11 @@ can be deployed independently:
    (Stage 7). Validation against the twin belongs to run_test (item 5 below),
    not to decrypt — keep the production binary free of test-only inputs.
 
-**Enforce the declared input bounds on the client path.** Whatever Stage 5 chose
-(reject out-of-domain records, or winsorize them to the bounds), the client applies
-it at run time: the `encrypt` program, or the client harness that feeds it, reads
-the committed bounds file and rejects or clips before encrypting. A committed bounds
-file that no program reads is not enforcement; an out-of-domain input then sails
-into the circuit and breaks decode-safety silently. This holds on both
-implementation paths.
+**Enforce the declared input bounds on the client path (both implementation
+paths).** Whatever Stage 5 chose (reject or winsorize), the `encrypt` program, or
+the client harness that feeds it, reads the committed bounds file and rejects or
+clips before encrypting. A bounds file no program reads is not enforcement; an
+out-of-domain input then breaks decode-safety silently.
 
 **Ship a container wrapper, a `run_test.sh`, and a `Makefile`** at the top of the
 application directory so the build-and-run commands stay short. Their full spec is
