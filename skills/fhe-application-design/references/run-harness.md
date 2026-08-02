@@ -36,9 +36,12 @@ home (the server refuses to start if a secret key is in its home; include that
 negative test), forwards the mode to `server`, then reports results in two tiers.
 
 **Lead the printed summary with the application's own quality metrics**: the
-model's task performance on the decrypted outputs, the numbers a user weighing FHE
-for this workload would look at first (accuracy, area under the curve, error
-distribution, or decision counts, as fits the task). Present the FHE-specific
+model's task performance measured against the ground-truth labels in the test set
+(accuracy, area under the curve, precision/recall, or task-appropriate error), the
+numbers a user weighing FHE for this workload would look at first. This needs a
+labeled test set with real ground truth (see Stage 3 on sourcing it); do not
+substitute the model's output distribution (decision counts, mean score) for
+quality, because without an expected baseline those numbers are not interpretable. Present the FHE-specific
 comparison (decrypted output against the faithful twin, the encryption error) and
 the deployment profile (timings, boundary sizes, peak server memory) below that, as
 second-tier evidence.

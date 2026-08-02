@@ -419,6 +419,17 @@ structure already in place:
    set there is no way to tell whether a cheaper parameter choice costs 0.1%
    accuracy or destroys the model.
 
+   **When the workload is ML, ask where that labeled data comes from:**
+   - **User has a dataset** (file or URL): use it as given; confirm it carries the
+     labels the metric needs.
+   - **Agent sources it:** find a suitable public dataset and cite its URL in the
+     README for the user to vet.
+   - **Agent synthesizes it:** generate an *independent* ground truth and fit the
+     model to predict it. Never let the labels be the model's own thresholded output
+     (that gives trivial self-agreement and a base rate that is a dial, not a result):
+     sample labels from a true latent function with noise and a chosen base rate, and
+     report accuracy / AUC / precision-recall against them plus that base rate.
+
    **Pick the metric to match the task.** For rare-class workloads (fraud,
    intrusion, anomaly detection) raw accuracy and even decision-agreement are
    misleading: the negative class dominates, so a polynomial that destroys the
