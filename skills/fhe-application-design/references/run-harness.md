@@ -169,7 +169,10 @@ any root `client_home/` / `server_home/`), and the `*_server_workload_*/` FHETCH
 trace directories. **List the run-home directories explicitly; never `rm -rf run_*`**,
 because that glob also matches `run_test.sh` and deletes the orchestrator (the same
 trap catches any generated script whose name a clean glob can hit). Keep the paths
-in sync with what the scripts create and with `.gitignore`.
+in sync with what the scripts create and with `.gitignore`, and ship that
+`.gitignore` with the app: it covers everything `clean` removes (the build tree,
+the run homes, trace directories) plus local tooling that must never be committed,
+in particular any virtualenv (`.venv/`) and `__pycache__/`.
 
 ## Build and validate
 
