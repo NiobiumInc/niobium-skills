@@ -124,15 +124,15 @@ follows; produce all of them.
 
 3. **Compile and build in your project directory.** From your project
    directory, run the cross-compiler against your `.niob` files, emitting the
-   generated C++ into your project:
+   generated C++ into your project (in the FHE-dev image the niobium-client
+   checkout is at `/opt/niobium-client`):
    ```
    python3 <niobium-client>/dsl_fhe/xcomp/nbc.py compile \
        shared.niob client.niob server.niob --outdir nb_out
    ```
-   The generated `nb_out/` is a self-contained CMake project (depends only on
-   OpenFHE): build it with `cmake -S nb_out -B nb_out/build && cmake --build
-   nb_out/build`, then run the stage binaries in order and verify against the
-   plaintext reference. (To contribute the app as a niobium-client example
+   The generated `nb_out/` is a self-contained CMake project: build it with
+   `cmake -S nb_out -B nb_out/build && cmake --build nb_out/build`, then run
+   the stage binaries in order and verify against the plaintext reference. (To contribute the app as a niobium-client example
    instead, add it under `dsl_fhe/examples/<name>/` with `make <name>` /
    `test-<name>` targets per `HOWTO.md`.)
 

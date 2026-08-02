@@ -1359,11 +1359,12 @@ implementation paths.
 application directory so the build-and-run commands stay short. Their full spec is
 in `references/run-harness.md`: the three files, the three `run_test` modes with the
 Fog as the default target, the `FOG_TARGET` / `RINGCHK` / `NREC` knobs, the build
-command, and the `clean` target. Two directives there are non-negotiable. The
+command, and the `clean` target. Three directives there are non-negotiable. The
 default (no-flag) run targets the real Fog and must dispatch the server under `fog
-submit` (never a preflight-only stub). And `run_test` leads its printed output with
+submit` (never a preflight-only stub). `run_test` leads its printed output with
 the application's own quality metrics, keeping the FHE-vs-twin comparison and the
-deployment profile as second-tier evidence.
+deployment profile as second-tier evidence. And `clean` removes explicitly listed
+run directories, never `rm -rf run_*` (the glob matches `run_test.sh` itself).
 
 Build once, then validate locally on CPU with `./run_test.sh --cpu` before moving
 on.
