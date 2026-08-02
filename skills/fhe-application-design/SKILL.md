@@ -1477,7 +1477,10 @@ Requirements for the demo:
 This is inexpensive — a few dozen lines of glue around the four binaries — and
 it is the artifact that most convincingly communicates the shape of an FHE
 solution to stakeholders. Treat it as part of the deliverable, not an optional
-extra.
+extra. Write the demo glue in Python: a small stdlib `http.server` wrapper
+around the binaries handles the HTTP transport, byte-count logging, and the
+configurable server URL cleanly. `run_test.sh` and `run-in-container.sh` stay
+shell (they orchestrate processes).
 
 **Testing and debugging:**
 
