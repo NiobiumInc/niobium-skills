@@ -69,9 +69,12 @@ Provide `-h`/`--help` listing the three modes and the env knobs:
 ## Makefile
 
 A `clean` target that removes everything a build or a run regenerates: the
-`build/` tree, the per-run homes (`run_*/` and any root `client_home/` /
-`server_home/`), and the `*_server_workload_*/` FHETCH trace directories. Keep the
-paths in sync with what the scripts actually create and with `.gitignore`.
+`build/` tree, the per-run homes (the `run_cpu/` / `run_sim/` / `run_fog/` dirs and
+any root `client_home/` / `server_home/`), and the `*_server_workload_*/` FHETCH
+trace directories. **List the run-home directories explicitly; never `rm -rf run_*`**,
+because that glob also matches `run_test.sh` and deletes the orchestrator (the same
+trap catches any generated script whose name a clean glob can hit). Keep the paths
+in sync with what the scripts create and with `.gitignore`.
 
 ## Build and validate
 
