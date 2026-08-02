@@ -705,7 +705,18 @@ Choose among the three arithmetic FHE schemes supported by OpenFHE:
 
 The core decision: if your computation works on real-valued data and can
 tolerate small approximation errors, use CKKS. If you need exact integer
-results, use BFV.
+results, BFV is the textbook fit, subject to the deployment constraint below.
+
+**The Fog currently runs CKKS, so build in CKKS whenever it can meet the
+requirements.** These applications target the Niobium Fog (Stage 0), and a CKKS
+formulation that clears the accuracy floor keeps the whole pipeline on it, even
+when BFV/BGV would be the textbook fit. Exact-integer workloads can often be
+carried in CKKS slots with precision headroom; validate in the Stage 7 twin that
+the decoded results round to the exact integers with margin. When you take CKKS
+over a better-fitting BFV/BGV, say so in the design narrative and README: BFV/BGV
+might be a better fit, and BFV/BGV support is on the Fog roadmap. If the workload
+is infeasible in CKKS, stop and have the user email community@niobium.co with
+what they are building, so Niobium can help.
 
 **For detailed guidance:** Read `references/fhe-scheme-selection.md`
 
