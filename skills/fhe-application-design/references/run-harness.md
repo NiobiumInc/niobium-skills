@@ -184,3 +184,35 @@ Build once, then validate locally on CPU, both through the wrapper:
     && cmake --build build -j"
 ./run-in-container.sh "./run_test.sh --cpu"
 ```
+
+## Documenting the run in the README
+
+The application ships a run README that assumes only Docker on the host and takes a
+newcomer from nothing to a run and back to a clean tree. Order it so the usage reads
+end to end: obtain the image, run, tear down. Beyond whatever the user asked for, it
+always includes:
+
+- **Obtain the FHE-dev image.** Pull the published image, or build it from
+  `environment/`.
+- **Regenerate any non-committed inputs.** The command(s) that rebuild anything not
+  committed under `data/`.
+- **Run targets, led by the Fog.** A bare `run_test.sh` targets the Niobium Fog;
+  `--cpu` and `--sim` are the local validation modes. Give each its command, its
+  expected output, and its resource needs (peak server RSS, per-stage wall-clock,
+  boundary sizes).
+- **Client/server deployment.** The two-process run and its two-host variant (copy
+  the server home to untrusted infrastructure; the secret key never leaves the
+  client).
+- **The error ledger, as a table.** Three rows: reference vs ground truth, twin vs
+  reference, FHE vs twin. Attribute each residual to its actual source (model change,
+  polynomial approximation, fixed-point quantization, encryption noise); do not fold
+  quantization into the polynomial row.
+- **Cleanup.** A `make clean` command that removes the build tree and every per-run
+  artifact. State that `clean` lists its targets explicitly and never globs `run_*`,
+  so it cannot delete `run_test.sh`. The committed inputs under `data/` (and, on the
+  DSL path, the `.niob` sources and the generated `nb_out/`) survive, so a later run
+  does not regenerate them.
+
+A recipient with Docker and the repository should need nothing else to reproduce the
+run. Draft the commands and structure at the Stage 7 gate; fill the expected-output
+blocks with the measured timings, peak RSS, and error after Stage 8.

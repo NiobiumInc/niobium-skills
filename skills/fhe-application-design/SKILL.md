@@ -1404,12 +1404,11 @@ out-of-domain input then breaks decode-safety silently.
 application directory so the build-and-run commands stay short. Their full spec is
 in `references/run-harness.md`: the three files, the three `run_test` modes with the
 Fog as the default target, the `FOG_TARGET` / `RINGCHK` / `NREC` knobs, the build
-command, and the `clean` target. Three directives there are non-negotiable. The
-default (no-flag) run targets the real Fog and must dispatch the server under `fog
-submit` (never a preflight-only stub). `run_test` leads its printed output with
-the application's own quality metrics, keeping the FHE-vs-twin comparison and the
-deployment profile as second-tier evidence. And `clean` removes explicitly listed
-run directories, never `rm -rf run_*` (the glob matches `run_test.sh` itself).
+command, and the `clean` target. Read it before authoring the harness; three of its
+directives are non-negotiable (the default run dispatches the server under `fog
+submit`, never a preflight-only stub; `run_test` leads its output with the
+application's own quality metrics; and `clean` lists its run directories explicitly,
+never `rm -rf run_*`).
 
 Build once, then validate locally on CPU with `./run_test.sh --cpu` before moving
 on.
@@ -1614,21 +1613,14 @@ rewrite from scratch here.
    part d "not a lucky run," and the final PASS.)*
 
 3. **A run README** in the application directory. It assumes only Docker on the
-   host and takes a newcomer from nothing to a run. Beyond whatever the user asked
-   for, it always includes: how to obtain the FHE-dev image (pull the published
-   image, or build it from `environment/`); how to regenerate any non-committed
-   inputs; and the run targets **led by the Fog** (a bare `run_test.sh` targets the
-   Niobium Fog, then `--cpu` and `--sim` for local validation), each with its
-   command, expected output, and resource needs. Include how to run the application
-   as a client/server deployment: the two-process run and its two-host variant.
-   Write the error ledger into the README as a table: the rows reference vs
-   ground truth, twin vs reference, and FHE vs twin, each residual attributed to
-   its actual source (model change, polynomial approximation, fixed-point
-   quantization, encryption noise). Do not fold quantization into the polynomial
-   row. A
-   recipient with Docker and the repository should need nothing else to reproduce
-   the run. *(Commands and structure drafted at the gate; here fill the "expected
-   output" block with the measured timings, peak RSS, and error.)*
+   host and takes a newcomer from nothing to a run and back to a clean tree. Its
+   full structure is in `references/run-harness.md` ("Documenting the run in the
+   README"): obtaining the FHE-dev image, regenerating inputs, the Fog-led run
+   targets with their expected output and resource needs, the two-process/two-host
+   deployment, the error-ledger table (each residual attributed to its source), and
+   cleanup via `make clean`. Draft the commands and structure at the Stage 7 gate;
+   here fill the "expected output" blocks with the measured timings, peak RSS, and
+   error.
 
 This documentation serves both as a security specification and as a guide
 for anyone reviewing or extending the application.
@@ -1713,7 +1705,7 @@ self-contained and can be read independently.
 | `references/fhe-what-fhe-can-and-cannot-do.md` | Stage 2: assessing whether a workload is FHE-feasible |
 | `references/fhe-scheme-selection.md` | Stage 4: choosing between CKKS, BFV, and BGV |
 | `references/building-your-first-fhe-application.md` | Stages 3, 6, 8: the development checklist from plaintext through implementation |
-| `references/run-harness.md` | Stages 8, 10: the generated run scaffold (run-in-container.sh, run_test.sh with its three run modes, metrics, and env vars, and the Makefile clean target) |
+| `references/run-harness.md` | Stages 8, 10: the generated run scaffold (run-in-container.sh, run_test.sh with its three run modes, metrics, and env vars, the Makefile clean target) and how to document the run end to end in the README (Stage 9) |
 | `references/implementing-with-openfhe.md` | Stage 8 (OpenFHE path): the OpenFHE C++ build mechanics — CMake/linking, context features and serialization, the shared `run_circuit` |
 | `references/implementing-with-nb-dsl.md` | Stage 8 (DSL path): implementing the design in the `nb` FHE DSL (niobium-client) — stage-to-construct mapping, the deliverable contract in DSL form, workflow, pitfalls, limitations |
 | `references/niobium-client-fog-variant.md` | Stage 10: running the niobium-client Fog deployment (`app/`) of a validated OpenFHE app (`app/` layout, the `niobium::compiler()` recording pattern, the in-container build, simulation verification, trace submission) |
