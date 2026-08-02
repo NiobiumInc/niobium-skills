@@ -76,12 +76,14 @@ follows; produce all of them.
   the OpenFHE `encrypt` program carries.
 - **`run_test` and the run harness.** Generate the same `run-in-container.sh`,
   `run_test.sh` (the three modes with the Fog as the default target), and `Makefile`
-  described in `run-harness.md`. The DSL gives you the comparison for free: for every
-  twinnable stage the compiler emits a `<stage>_ref` cleartext twin, so `run_test`
-  compares the encrypted run against `_ref` alongside the harness's plaintext
-  reference. Build the generated `nb_out/` project, run the stage binaries in order,
-  and report the same metrics: the application's own quality first, then FHE-vs-twin
-  error, then the deployment profile. Wire `fhetch_sim` (`NBCC_FHETCH_SIM`,
+  described in `run-harness.md`. The pass criterion is unchanged: encrypted output
+  against the harness's faithful twin (Stage 7, polynomial activations) within the
+  recorded noise tolerance, zero decision flips. The `<stage>_ref` twins apply the
+  true nonlinearities, so an encrypted-vs-`_ref` delta folds approximation error
+  into encryption error; report it as supplementary evidence only. Build the
+  generated `nb_out/` project, run the stage binaries in order, and report the same
+  metrics: the application's own quality first, then FHE-vs-twin error, then the
+  deployment profile. Wire `fhetch_sim` (`NBCC_FHETCH_SIM`,
   `LD_LIBRARY_PATH`) into the `--sim` mode.
 - **Client/server two-process demo.** Required here too. The `@stage` binaries
   already run as separate processes exchanging serialized files, but stand them up as
