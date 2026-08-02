@@ -917,7 +917,7 @@ The key parameters for CKKS (and analogous choices for BFV/BGV):
   explicitly** — in OpenFHE, `CCParams<CryptoContextCKKSRNS>::SetRingDim(65536)`
   — rather than relying on it being inferred from the batch/slot count. An
   under-set ring silently drops below the floor and fails key generation. (If you
-  take the optional DSL path, the equivalent is a literal `ring_dim` in the
+  take the DSL path, the equivalent is a literal `ring_dim` in the
   `scheme` block; don't carry it only on the `Instance` struct, or codegen falls
   back to `n_slots` = N/2.)
 
@@ -1161,7 +1161,7 @@ log2(Q) = first_mod + depth x q_i; log2(Q) and the security target set the
 minimum ring dimension N; N sets performance. Run this sweep against the
 **faithful twin** (Stage 7), not the encrypted build: the twin measures each
 sweep point's accuracy in seconds without re-running encryption. (If you take
-the optional DSL path, its compiler also surfaces this frontier at compile time —
+the DSL path, its compiler also surfaces this frontier at compile time —
 Chebyshev depth charging and a params note mapping logQ to the minimum N per
 security level.)
 

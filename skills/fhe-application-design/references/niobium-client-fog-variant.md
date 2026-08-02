@@ -184,11 +184,11 @@ The Fog build must clear the **same** bar as the CPU app, plus a free extra:
 - **Run artifacts are not source.** The key directory and the
   `*_server_workload_*/` trace directory are regenerated every run — `.gitignore`
   them; commit only `app/` sources + `data/`.
-- **This is not the DSL path.** The optional `nb` DSL (see
+- **This is not the DSL path.** The `nb` DSL (see
   `implementing-with-nb-dsl.md`) is a *different* front door that rewrites the
-  computation in the DSL and generates OpenFHE. This add-on instead **reuses the
+  computation in the DSL and generates OpenFHE. This stage instead **reuses the
   finished OpenFHE app** through niobium-client's instrumented-OpenFHE entry
-  point. Offer whichever the user wants; do not conflate them.
+  point. Do not conflate them.
 
 ## Heavy and bootstrapped circuits — field notes
 
