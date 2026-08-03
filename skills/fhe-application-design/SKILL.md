@@ -40,16 +40,22 @@ First, their FHE experience. This sets the register for the whole conversation a
 for the generated documentation (see "Communicating with the user"):
 
 > How much have you worked with Fully Homomorphic Encryption (FHE)?
-> (a) New to it, keep the explanation in plain terms
-> (b) Experienced, use FHE terminology freely
+> (a) New to FHE: keep the explanation in plain terms
+> (b) Experienced with FHE: use FHE terminology freely
 
-Second, which implementation path to build:
+Second, which implementation path to build. Put the maturity of each path in the
+option label itself, not only in the sentence that follows it:
 
 > How do you want to build this application?
-> (a) The Niobium DSL: a higher-level language that expresses the computation and
->     generates the OpenFHE program for you. It is an alpha-stage tool.
-> (b) OpenFHE directly: hand-written OpenFHE, following the full stage-by-stage
->     design below. It is a robust, mature library.
+> (a) Niobium DSL (alpha-stage tool): a higher-level language that expresses the
+>     computation and generates the OpenFHE program for you.
+> (b) OpenFHE directly (robust, mature library): hand-written OpenFHE, following
+>     the full stage-by-stage design below.
+
+Phrase every option in terms of the party who acts, so it is never ambiguous who
+"I" or "you" refers to when the assistant renders the choice. The assistant is
+"the assistant"; the person you are talking to is "you." (Bare "I"/"you" flips
+easily coming from an AI, so name the actor instead.)
 
 Recommend (a) the DSL to a user new to FHE, and state plainly that the DSL is
 alpha-stage while OpenFHE is robust so they can weigh it. The two choices are
@@ -61,11 +67,18 @@ where (a) implements the validated design per `references/implementing-with-nb-d
 and (b) hand-writes OpenFHE per `references/implementing-with-openfhe.md`. Both
 target the Niobium Fog and differ only in how the program is authored.
 
-**Save the two answers as a memory** if your AI assistant supports one. Ask the user
-whether to store it for this project or globally for the assistant (offer both only
-where your assistant distinguishes the two). Record the FHE experience level and the
+**Save the two answers as a memory** if your AI assistant supports one. Before
+writing anything, **ask the user where to save it**: for this project, or globally
+for the assistant (offer both only where your assistant distinguishes the two). Save
+it where they say; do not pick silently. Record the FHE experience level and the
 chosen implementation path so a later session resumes at the right register and path
 without re-asking.
+
+Scope the memory to *this FHE work*, not the person in general. "New to FHE" means
+new to FHE, not new to their own field or to software, so do **not** write a memory
+that says the user is a beginner at everything. The domain-familiarity answer
+(Stage 1) is likewise about one domain. Keep each memory as narrow as the question
+that produced it.
 
 Follow the stages below in order. Each stage has a brief description here in
 the SKILL.md, with pointers to reference files that contain deeper guidance.
@@ -73,6 +86,16 @@ Read the relevant reference file when you need the detail for a given stage.
 
 The stages mirror a real FHE design process. Do not skip stages — each one
 produces inputs that the next stage depends on.
+
+**Show the user the map, and say where you are.** At the start, lay out the stages
+in a few plain sentences so the user knows the shape of what is coming and can see
+where they get to weigh in. As you work, name the stage you are entering and, in a
+sentence, why it matters, so the user is never watching files and text appear
+without knowing what stage produced them or what decision it serves. This is not
+a request for permission at every step (in self-run mode you keep moving); it is
+keeping the user oriented enough to course-correct if they want to. When the user
+is new to FHE, do this in the plain-language register described in "Communicating
+with the user" and its `references/explaining-fhe-to-newcomers.md`.
 
 **Three versions of the application.** Keep these distinct throughout — the
 whole methodology is the disciplined path from the first to the third:
@@ -104,7 +127,7 @@ the reference material.
    jargon out of it — terms like bootstrapping, modulus/level budget, rescaling,
    ring dimension, RNS limbs, relinearization, Chebyshev approximation, SIMD slot
    packing, decode/noise budget. When such a concept genuinely must appear, give
-   a one-line plain-language gloss the first time (e.g. "bootstrapping — a
+   a one-line plain-language explanation the first time (e.g. "bootstrapping — a
    refresh step that restores headroom for more computation"). Only shift into
    fluent FHE terminology if the user demonstrates FHE fluency or explicitly asks
    for the depth. Reserve the full vocabulary for code, references, and the
@@ -113,8 +136,18 @@ the reference material.
    **This governs the generated documentation too.** Write the README and
    user-facing report prose at the FHE experience level the user gave in the
    up-front question: beginner by default (plain language, no cryptography
-   terminology, gloss any unavoidable term), full FHE/CKKS terminology for a
+   terminology, explain any unavoidable term), full FHE/CKKS terminology for a
    self-identified expert.
+
+   **Be a teacher, not only an executor.** For a user new to FHE, explain as you
+   build. Read `references/explaining-fhe-to-newcomers.md` and use it whenever you
+   name a term, present a design choice, or report a result. Never narrate a design
+   point as a bare parameter list ("Chebyshev degree 59, scaling 45, depth 11"); say
+   what it buys the user and what it costs, in their terms.
+
+   **The starting register is not permanent.** If a user who selected "experienced"
+   keeps asking what FHE terms mean, switch to the plain-language register and the
+   newcomer reference for the rest of the session.
 
 2. **Spell out every acronym on first use.** In conversation and in report
    prose, write the expansion the first time and the acronym thereafter —
@@ -125,8 +158,9 @@ the reference material.
    is common knowledge.
 
 3. **Ask about application-domain familiarity early, and adapt to it.** FHE
-   familiarity is assumed low (rule 1) and is *not* worth asking about. But
-   *application*-domain familiarity varies widely and is worth one question. At
+   familiarity is already captured by the up-front question (see "Two choices up
+   front"), so it is not re-asked here. But *application*-domain familiarity varies
+   widely and is worth its own question. At
    the start of Stage 1 — once you know the workload's domain (from the reference
    package or the user's problem statement) — ask the user to self-rate their
    familiarity with **that specific domain**, e.g.:
@@ -437,10 +471,11 @@ structure already in place:
    test data. This becomes the ground truth that every subsequent version is
    tested against.
 
-   **Firm requirement for machine-learning workloads:** the user must bring a
-   complete plaintext implementation of the model AND a representative test
-   set with expected outputs before any FHE design work proceeds. This is not
-   optional. Every FHE design decision downstream — Chebyshev approximation
+   **Firm requirement for machine-learning workloads:** a complete plaintext
+   implementation of the model AND a representative test set with expected outputs
+   must be in hand before any FHE design work proceeds, whether provided by the user
+   or sourced/synthesized per the next block. This is not optional. Every FHE design
+   decision downstream — Chebyshev approximation
    degree, scaling modulus size (q_i), multiplicative depth, ring dimension —
    trades accuracy against security and performance, and those trades can
    only be evaluated against END-TO-END MODEL ACCURACY on real test data, not
@@ -448,20 +483,27 @@ structure already in place:
    set there is no way to tell whether a cheaper parameter choice costs 0.1%
    accuracy or destroys the model.
 
-   **When the workload is ML, ask where that labeled data comes from:**
-   - **User has a dataset** (file or URL): use it as given; confirm it carries the
-     labels the metric needs.
-   - **Agent sources it:** look up the standard datasets for this task and choose
-     primarily by *popularity* (usage, citations, benchmarks), the strongest signal
-     of a sound choice; cite the dataset's URL in the README so the user can vet
-     provenance and licensing.
-   - **Agent synthesizes it:** look up how data for this task is conventionally
-     generated (feature distributions, typical base rates), then generate an
-     *independent* ground truth and fit the model to predict it: sample labels from
-     a true latent function with noise and a chosen base rate, never from the
-     model's own thresholded output (trivial self-agreement, and the base rate
-     becomes a dial). Report the task metrics against those labels plus the base
-     rate.
+   **When the workload is ML, ask where the model and labeled data come from.**
+   Offer these options in order, most complete starting point first; name the actor
+   in each so it is never ambiguous who does what. Synthesizing everything is the
+   last resort, not the recommendation. It produces a proof of concept the user
+   swaps real data into later:
+   - **You have the model and the data** (a complete starting point): use both as
+     given; confirm the test set carries the labels the metric needs.
+   - **You have the data but no model** (you want help with *how* to evaluate): use
+     the user's data as ground truth and build the plaintext reference model to it.
+   - **Have the assistant get a real, representative dataset and model:** look up the
+     standard datasets and models for this task and choose primarily by *popularity*
+     (usage, citations, benchmarks), the strongest signal of a sound choice; cite the
+     dataset's URL in the README so the user can vet provenance and licensing.
+   - **Have the assistant synthesize the data and model** (a proof of concept; swap
+     in real data later): look up how data for this task is conventionally generated
+     (feature distributions, typical base rates), then generate an *independent*
+     ground truth and fit the model to predict it: sample labels from a true latent
+     function with noise and a chosen base rate, never from the model's own
+     thresholded output (trivial self-agreement, and the base rate becomes a dial).
+     Report the task metrics against those labels plus the base rate, and state
+     plainly in the docs that the data and model are synthetic.
 
    **Pick the metric to match the task.** For rare-class workloads (fraud,
    intrusion, anomaly detection) raw accuracy and even decision-agreement are
@@ -1214,6 +1256,14 @@ only by a stated program attribute the cheaper point misses (an accuracy,
 precision/recall, or decision-agreement target); when you take one, name the
 attribute that required it.
 
+When you surface this choice to the user rather than just taking the cheapest
+passing point, present it as a functional tradeoff, not as degrees and flip counts:
+what the more accurate option buys (how much more quality, on what) against what it
+costs (run time, money), with your recommendation. "Same speed either way, so take
+the more accurate one" and "fifteen more correct calls in fifty thousand, but about
+thirty minutes longer per run" are decisions a user can make; "degree 59 vs 119" is
+not. See `references/explaining-fhe-to-newcomers.md`.
+
 **When the sweep cannot win, walk the Stage 3 ladder — ending in a model
 change.** If the whole in-budget sweep is exhausted and no point meets the
 accuracy floor — typically because an activation's operand range is too wide for
@@ -1704,6 +1754,7 @@ self-contained and can be read independently.
 | `references/environment-setup.md` | Stage 0: preparing the build-and-run environment (Docker, the FHE-dev image, the smoke test, the mounted-folder data bus) |
 | `references/fhe-privacy-model.md` | Stage 1: establishing the privacy model (parties, adversaries, output privacy, differential privacy) |
 | `references/fhe-what-fhe-can-and-cannot-do.md` | Stage 2: assessing whether a workload is FHE-feasible |
+| `references/explaining-fhe-to-newcomers.md` | All stages, when the user is new to FHE: how to explain terms, tradeoffs, parties, and results in plain, functional terms |
 | `references/fhe-scheme-selection.md` | Stage 4: choosing between CKKS, BFV, and BGV |
 | `references/building-your-first-fhe-application.md` | Stages 3, 6, 8: the development checklist from plaintext through implementation |
 | `references/run-harness.md` | Stages 8, 10: the generated run scaffold (run-in-container.sh, run_test.sh with its three run modes, metrics, and env vars, the Makefile clean target) and how to document the run end to end in the README (Stage 9) |

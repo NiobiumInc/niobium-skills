@@ -44,6 +44,12 @@ those numbers are not interpretable. Present the FHE comparison (decrypted outpu
 against the faithful twin) and the deployment profile (timings, boundary sizes,
 peak server memory) below that, as second-tier evidence.
 
+When the user is new to FHE, label these numbers in plain terms in the summary the
+user reads: what the quality metric means for the task, and what the fidelity
+comparison is telling them (that encryption did not change the answers), rather than
+a bare parameter or error dump. The raw numbers still belong in the report tables;
+`references/explaining-fhe-to-newcomers.md` covers how to phrase them.
+
 Three run modes:
 
 - **(no flag) the Fog, the default.** Targets the Niobium Fog (Stage 10). It
@@ -194,6 +200,15 @@ always includes:
 
 - **Obtain the FHE-dev image.** Pull the published image, or build it from
   `environment/`.
+- **Inputs and outputs.** Enumerate and describe the data the application consumes
+  and produces, as a table the reader can map to the code: each input feature (name,
+  meaning, unit, and expected range or the bounds the client enforces) and each
+  output field (name, meaning, unit, range). Include this **even when the data is
+  synthesized**, because a reader cannot judge or reuse the application without
+  knowing what the numbers are. For a classifier, list the classes and the base rate; for a
+  regression, the target and its units. Name the parties concretely for this
+  application (client = the user's side that holds the data and the key; server = the
+  party that computes on it), not as abstract roles.
 - **Regenerate any non-committed inputs.** The command(s) that rebuild anything not
   committed under `data/`.
 - **Run targets, led by the Fog.** A bare `run_test.sh` targets the Niobium Fog;
