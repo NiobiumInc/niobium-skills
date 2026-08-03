@@ -1453,7 +1453,7 @@ out-of-domain input then breaks decode-safety silently.
 
 **Ship a container wrapper, a `run_test.sh`, and a `Makefile`** at the top of the
 application directory so the build-and-run commands stay short. Their full spec is
-in `references/run-harness.md`: the three files, the three `run_test` modes with the
+in `references/run-harness.md`: the three files, the four `run_test` modes with the
 Fog as the default target, the `FOG_TARGET` / `RINGCHK` / `NREC` knobs, the build
 command, and the `clean` target. Read it before authoring the harness; three of its
 directives are non-negotiable (the default run dispatches the server under `fog
@@ -1686,27 +1686,36 @@ and security analysis.
 twin, the two-process demo standing) and documented (Stage 9). The **same binary**
 generates the FHETCH trace and targets the Fog; there is no second build and no
 separate directory. Every mode runs the identical computation: `--cpu` serializes
-the OpenFHE result, while `--sim` and the default both record the `.fhetch` trace
-and differ only in where it is reconstructed (local `fhetch_sim` vs the Fog).
+the OpenFHE result, while `--sim`, `--sim-full`, and the default all record the
+`.fhetch` trace and differ only in how it is recorded (hollow vs real math) and where
+it is reconstructed (local `fhetch_sim` vs the Fog).
 
-### Validate locally through the simulator (`--sim`) — required
+### Validate locally through the simulator (`--sim` / `--sim-full`) — required
 
 Run the app with `--sim` and verify the result the same way the `--cpu` run was
 verified, against the faithful twin, through the local `fhetch_sim`, so it is fast
-and needs no Fog account:
+and needs no Fog account. `--sim` records **hollow** — the same as the Fog default —
+so it is a faithful local rehearsal of the deployed run. `--sim-full` records **real
+math** and adds the ring-level ciphertext-identity check:
 
 ```bash
-./run-in-container.sh "./run_test.sh --sim"      # record -> fhetch_sim -> compare vs twin
+./run-in-container.sh "./run_test.sh --sim"        # hollow record -> fhetch_sim -> compare vs twin
+./run-in-container.sh "./run_test.sh --sim-full"   # real record + ring-level identity check
 ```
 
 - **To the same bar.** The session writes the `.fhetch` trace and the simulator
   reconstructs the result from it; that result must reproduce the twin within the
   **encryption-noise tolerance recorded in Stage 7, with zero decision flips**,
   the identical `run_test` criterion the `--cpu` run cleared.
-- **Ring-level identity check (free).** Generating the trace also yields a
-  bit-identical "simulator vs OpenFHE" ring-level comparison: the `--sim` run and
-  the `--cpu` run must agree exactly at the ring level, confirming the trace
-  captured the computation faithfully before it ever reaches hardware.
+- **Ring-level identity check (free, `--sim-full`).** A real-math record also yields a
+  bit-identical "simulator vs OpenFHE" ring-level comparison: the `--sim-full` run and
+  the `--cpu` run must agree exactly at the ring level, confirming the trace captured
+  the computation faithfully before it ever reaches hardware. (Under hollow the
+  record-pass ciphertext is a placeholder, so this check runs in `--sim-full`, not
+  `--sim`.)
+- **Hollow-fidelity cross-check.** `--sim` (hollow) and `--sim-full` (real) must
+  reconstruct the same decrypted result; a divergence is a hollow-recording bug in the
+  toolchain, not the app.
 - The **minimum-ring-dimension check** (a security floor) stays on — it passes at
   N = 2^16. `--no-ring-dim-check` is an explicit opt-in for a sub-standard ring, not
   a default.
@@ -1757,7 +1766,7 @@ self-contained and can be read independently.
 | `references/explaining-fhe-to-newcomers.md` | All stages, when the user is new to FHE: how to explain terms, tradeoffs, parties, and results in plain, functional terms |
 | `references/fhe-scheme-selection.md` | Stage 4: choosing between CKKS, BFV, and BGV |
 | `references/building-your-first-fhe-application.md` | Stages 3, 6, 8: the development checklist from plaintext through implementation |
-| `references/run-harness.md` | Stages 8, 10: the generated run scaffold (run-in-container.sh, run_test.sh with its three run modes, metrics, and env vars, the Makefile clean target) and how to document the run end to end in the README (Stage 9) |
+| `references/run-harness.md` | Stages 8, 10: the generated run scaffold (run-in-container.sh, run_test.sh with its four run modes, metrics, and env vars, the Makefile clean target) and how to document the run end to end in the README (Stage 9) |
 | `references/implementing-with-openfhe.md` | Stage 8 (OpenFHE path): the OpenFHE C++ build mechanics — CMake/linking, context features and serialization, the shared `run_circuit` |
 | `references/implementing-with-nb-dsl.md` | Stage 8 (DSL path): implementing the design in the `nb` FHE DSL (niobium-client) — stage-to-construct mapping, the deliverable contract in DSL form, workflow, pitfalls, limitations |
 | `references/niobium-client-fog-variant.md` | Stage 10: running the niobium-client Fog deployment (`app/`) of a validated OpenFHE app (`app/` layout, the `niobium::compiler()` recording pattern, the in-container build, simulation verification, trace submission) |

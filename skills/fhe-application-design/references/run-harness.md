@@ -7,7 +7,7 @@ the host.
 
 Contents:
 - [run-in-container.sh](#run-in-containersh) — run any command inside the image
-- [run_test.sh](#run_testsh) — the keygen → encrypt → server → decrypt pipeline, three modes
+- [run_test.sh](#run_testsh) — the keygen → encrypt → server → decrypt pipeline, four modes
 - [Makefile](#makefile) — the clean target
 - [Build and validate](#build-and-validate) — the first build and CPU run
 
@@ -50,7 +50,7 @@ comparison is telling them (that encryption did not change the answers), rather 
 a bare parameter or error dump. The raw numbers still belong in the report tables;
 `references/explaining-fhe-to-newcomers.md` covers how to phrase them.
 
-Three run modes:
+Four run modes:
 
 - **(no flag) the Fog, the default.** Targets the Niobium Fog (Stage 10). It
   preflights for an API key (printing the sign-in / sign-up pointer if none is
@@ -58,12 +58,25 @@ Three run modes:
   … --target=`. A print-and-exit stub that never submits is incomplete; see
   [niobium-client-fog-variant.md](niobium-client-fog-variant.md) for the concrete
   call. The Fog target defaults to the real Fog (`FOG`); a simulator is never the
-  default. `FOG_TARGET=FUNC_SIM` is an explicit hardware-free opt-in.
+  default. `FOG_TARGET=FUNC_SIM` is an explicit hardware-free opt-in. The record
+  pass that precedes dispatch runs **hollow** (fast trace generation; the replay
+  reconstructs the real values) — see "Hollow recording and the run modes" in
+  [niobium-client-fog-variant.md](niobium-client-fog-variant.md).
 - **`--cpu`** runs plain OpenFHE on the local CPU (the Stage 8 correctness gate).
-- **`--sim`** generates the FHETCH trace and runs it through the local simulator
-  (`fhetch_sim`), plus the free bit-identical ring-level check against OpenFHE.
+- **`--sim`** records **hollow** and runs the trace through the local simulator
+  (`fhetch_sim`), comparing the decrypted result to the twin. Recording hollow, it is
+  a faithful local rehearsal of the Fog run.
+- **`--sim-full`** records **real math** and runs the same local replay, plus the free
+  bit-identical ring-level ciphertext-identity check against OpenFHE (which needs a
+  real record-pass baseline). It is the thorough ground-truth run.
 
-Provide `-h`/`--help` listing the three modes and the env knobs:
+**Why two simulator modes.** `--sim` mirrors what deploys (hollow); `--sim-full` is the
+real-math ground truth with the byte-level ciphertext check. Running both and comparing
+their decrypted results is the standing cross-check for **hollow-recording fidelity**:
+they must agree, and a divergence points at a hollow-mode bug in the toolchain rather
+than the app. Keep both; do not collapse them.
+
+Provide `-h`/`--help` listing the four modes and the env knobs:
 
 - `FOG_TARGET` sets the Fog target for the default mode (default `FOG`;
   `FOG_TARGET=FUNC_SIM` selects the hardware-free functional simulator).
@@ -88,20 +101,23 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 run_test.sh — <app>: keygen -> encrypt -> server -> decrypt, then compare to the faithful twin.
-Usage: ./run_test.sh [--cpu | --sim | -h]
-  (no flag)   dispatch to the Niobium Fog (default; needs an API key)
+Usage: ./run_test.sh [--cpu | --sim | --sim-full | -h]
+  (no flag)   dispatch to the Niobium Fog (default; records hollow, needs an API key)
   --cpu       plain-OpenFHE local validation
-  --sim       generate the FHETCH trace and run it through the local fhetch_sim
+  --sim       hollow record -> local fhetch_sim replay -> twin compare (a Fog rehearsal)
+  --sim-full  real-math record -> replay + ring-level ciphertext-identity check vs OpenFHE
+              (compare --sim and --sim-full to surface any hollow-recording divergence)
 Env: FOG_TARGET (default FOG; FUNC_SIM = hardware-free simulator)
      RINGCHK   (set to --no-ring-dim-check only for a deliberately small ring)
      NREC      records to score
 EOF
 }
 
-MODE="fog"; FLAG=""
+MODE="fog"; FLAG=""; SIMFULL=0
 case "${1:-}" in
   --cpu) MODE="cpu"; FLAG="--cpu";;
   --sim) MODE="sim"; FLAG="--sim";;
+  --sim-full) MODE="sim"; FLAG="--sim"; SIMFULL=1;;
   "")    MODE="fog";;
   -h|--help) usage; exit 0;;
   *) usage; exit 2;;
@@ -109,6 +125,15 @@ esac
 
 FOG_TARGET="${FOG_TARGET:-FOG}"   # the real Niobium Fog; FUNC_SIM is the explicit hardware-free opt-in
 RINGCHK="${RINGCHK:-}"
+# Hollow record on the Fog default and --sim (fast, mirrors the Fog run); real math on
+# --sim-full (so the server's ring-level ciphertext-identity check has a real baseline)
+# and --cpu. init() consumes --hollow and compacts argv; the server recovers it via
+# is_hollow_mode() and brackets the circuit with enable_hollow_mode().
+HOLLOW_FLAG=""
+case "$MODE" in
+  fog) HOLLOW_FLAG="--hollow";;
+  sim) [ "$SIMFULL" = 1 ] || HOLLOW_FLAG="--hollow";;
+esac
 case "$MODE" in                   # trace modes are heavier per record than plain CPU
   cpu) NREC="${NREC:-<n_cpu>}";; sim) NREC="${NREC:-<n_sim>}";; fog) NREC="${NREC:-<n_fog>}";;
 esac
@@ -148,9 +173,11 @@ for ((i=0; i<NREC; i++)); do
   if [ "$MODE" = "fog" ]; then
     # THE DEFAULT PATH: the server runs under `fog submit`. A default mode that
     # preflights and exits without ever calling `fog submit` is incomplete.
-    fog submit "$BUILD/<app>_server" "$SERVER" $RINGCHK --target="$FOG_TARGET"
+    fog submit "$BUILD/<app>_server" "$SERVER" $HOLLOW_FLAG $RINGCHK --target="$FOG_TARGET"
   else
-    "$BUILD/<app>_server" "$SERVER" $FLAG $RINGCHK     # wrap to capture wall-clock + peak RSS
+    # --sim passes --hollow (server records hollow, skips its ring-level check);
+    # --sim-full omits it (real record, so the server's ring-level check runs).
+    "$BUILD/<app>_server" "$SERVER" $FLAG $HOLLOW_FLAG $RINGCHK   # wrap to capture wall-clock + peak RSS
   fi
   cp "$SERVER/ct_result.bin" "$CLIENT/ct_result_$i.bin"
   "$BUILD/<app>_decrypt" "$CLIENT" "$CLIENT/ct_result_$i.bin" >> "$RUN/decrypted.csv"

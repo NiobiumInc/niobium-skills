@@ -72,7 +72,7 @@ follows; produce all of them.
   `harness/` before `encrypt()`, and commit the bounds file; an out-of-domain input
   must be clipped or rejected there, never silently encrypted.
 - **`run_test` and the run harness.** Generate the same `run-in-container.sh`,
-  `run_test.sh` (the three modes with the Fog as the default target), and `Makefile`
+  `run_test.sh` (the four modes with the Fog as the default target), and `Makefile`
   described in `run-harness.md`. The pass criterion is unchanged: encrypted output
   against the harness's faithful twin (Stage 7, polynomial activations) within the
   recorded noise tolerance, zero decision flips. The `<stage>_ref` twins apply the
@@ -92,6 +92,14 @@ follows; produce all of them.
   under `fog submit --target=FOG` works the same as the OpenFHE path, with no
   hand-written `niobium::compiler()` calls. The `--target` rules and the
   minimum-ring-dim guard in `niobium-client-fog-variant.md` apply unchanged.
+  **Hollow recording is automatic:** the codegen recovers the `--hollow` flag via
+  `is_hollow_mode()` after `init()`, brackets the record pass with
+  `enable_hollow_mode()`, and rehydrates `vec<enc>` results from the replay. So the
+  generated `run_test.sh` carries the same mode-driven default as the OpenFHE path
+  (see "Hollow recording and the run modes" in `niobium-client-fog-variant.md`):
+  the Fog and `--sim` record hollow, `--sim-full` records real math with the
+  ring-level ciphertext-identity check, `--cpu` has no record pass. Nothing to
+  hand-wire.
 
 ## Workflow
 

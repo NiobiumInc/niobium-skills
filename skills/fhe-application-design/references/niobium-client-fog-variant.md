@@ -5,10 +5,12 @@ validated and documented (the four programs keygen/encrypt/server/decrypt,
 `run_test --cpu` green against the faithful twin, the two-process demo standing).
 The *same* binary reaches the Fog. Recording the computation with
 `niobium::compiler()` produces a FHETCH Polynomial IR trace (`.fhetch`); the
-server has three run modes over it: `--cpu` runs plain OpenFHE (no trace);
-`--sim` records the trace and reconstructs the result through the local
-`fhetch_sim`; and the default records and dispatches the trace to the Niobium
-Fog. `--sim` is the required local validation; the default needs a Fog API key.
+server has four run modes over it: `--cpu` runs plain OpenFHE (no trace); `--sim`
+records the trace **hollow** and reconstructs the result through the local
+`fhetch_sim` (a rehearsal of the hollow Fog run); `--sim-full` records real math and
+adds the ring-level ciphertext-identity check; and the default records **hollow** and
+dispatches the trace to the Niobium Fog. `--sim` is the required local validation; the
+default needs a Fog API key.
 
 ## When to run it
 
@@ -82,20 +84,62 @@ niobium::compiler().capture_crypto_context(cc);
 for (each input ct) niobium::compiler().tag_input("<name>", ct);
 niobium::compiler().tag_keys(cc);
 
+bool hollow_record = niobium::compiler().is_hollow_mode();  // --hollow, already consumed by init()
+
 if (!niobium::compiler().is_cache_valid()) {
+    niobium::compiler().enable_hollow_mode(hollow_record);  // hollow: skip real math on the record pass
     niobium::compiler().start();
     auto out = run_circuit(cc, model, inputs);     // the SHARED circuit
     niobium::compiler().probe("<output>", out);
     niobium::compiler().stop();                     // writes .fhetch + fhetch_replay.json
+    niobium::compiler().enable_hollow_mode(false);  // restore for the ring-level baseline below
 }
 niobium::compiler().replay();                       // --sim: local fhetch_sim; default: the Fog
 Ciphertext<DCRTPoly> ct_result;
-niobium::compiler().result(cc, "<output>", ct_result);
+niobium::compiler().result(cc, "<output>", ct_result);  // the REPLAY output — valid even under hollow
 // serialize ct_result for decrypt
 ```
 
-`result()` also lets you diff the simulator output against OpenFHE's at the ring
-level — a free "bit-identical" check (see Verification).
+`result()` returns the **replay** output, which is valid in every mode — including
+hollow, where the record pass produced no real ciphertext. On a real-math record you
+can additionally diff it against OpenFHE's own record-pass ciphertext at the ring level
+— a free "bit-identical" check (see Verification). Under hollow the record-pass
+ciphertext is garbage by design, so that particular cross-check is a real-record-only
+affordance.
+
+## Hollow recording and the run modes
+
+Recording the trace does not need the real polynomial math: the replay (local
+`fhetch_sim` or the Fog) reconstructs the true values from the recorded op stream.
+Hollow recording (`enable_hollow_mode(true)`, driven by the `--hollow` flag) skips that
+math on the record pass, cutting record time substantially on large circuits while
+producing the same trace. `init()` consumes `--hollow` and compacts it out of argv, so
+recover it with `niobium::compiler().is_hollow_mode()` after `init()` (never re-parse
+argv for it), then bracket the circuit with `enable_hollow_mode(hollow_record)` …
+`enable_hollow_mode(false)` as shown above.
+
+The generated harness makes recording mode-driven:
+
+- **Default (Fog): hollow.** The record pass that precedes `fog submit` runs hollow, and
+  the Fog reconstructs the result on replay.
+- **`--sim`: hollow.** A faithful local rehearsal of the Fog run — hollow record → local
+  `fhetch_sim` replay → compare the decrypted result to the twin.
+- **`--sim-full`: real math.** The thorough ground-truth run — real record → replay,
+  plus the ring-level ciphertext-identity check (which needs a real record-pass
+  baseline).
+- **`--cpu`: not applicable** (no recorder).
+
+**Keep `--sim` and `--sim-full` both, and document running them together.** `--sim`
+mirrors what deploys (hollow); `--sim-full` is the real-math ground truth with the
+byte-level ciphertext check. Their decrypted results must agree — a divergence points at
+a hollow-recording fidelity bug in the toolchain, not the app. That cross-check is the
+whole reason both modes exist; do not collapse them.
+
+**Correctness precondition (met by the pattern above):** every plaintext operand inside
+the record bracket must be captured. The library captures its own internal
+`EvalLogistic`/`EvalChebyshev*` coefficients and inline plaintexts automatically; the
+operands *you* build must be `tag_input`'d before `start()` (the same rule the `--sim`
+caveats below state).
 
 ## Build and run (in the FHE-dev container)
 
@@ -149,10 +193,16 @@ The Fog build must clear the **same** bar as the CPU app, plus a free extra:
 - **Fog-replay vs the faithful twin**: max output error in the encryption-noise
   band and **0 decision flips** (identical criterion to `run_test`). The
   recorded design and parameters are unchanged, so this should hold.
-- **Simulator vs OpenFHE (free)**: `result()` reconstructs the probe from the
-  replayed trace; comparing it to OpenFHE's own computed ciphertext at the ring
-  level should be **bit-identical**. A mismatch means the recorder/replayer did
-  not reproduce the op stream — a trace problem, not a design problem.
+- **Simulator vs OpenFHE (free, `--sim-full`)**: on a real-math record `result()`
+  reconstructs the probe from the replayed trace; comparing it to OpenFHE's own
+  computed ciphertext at the ring level should be **bit-identical**. A mismatch means
+  the recorder/replayer did not reproduce the op stream — a trace problem, not a design
+  problem. This check needs a real record, so it runs under `--sim-full`; the hollow
+  `--sim`/Fog default has no real record-pass ciphertext, and its gate is
+  replay-vs-twin above.
+- **`--sim` vs `--sim-full` agree**: the decrypted results of the hollow and real
+  records must match. A divergence is a hollow-recording fidelity problem in the
+  toolchain, not a design fault — surfacing exactly that is why both modes exist.
 
 ## Caveats and notes
 
