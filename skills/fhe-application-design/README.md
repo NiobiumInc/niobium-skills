@@ -103,7 +103,12 @@ skills/fhe-application-design/
 ├── SKILL.md                  # Main skill instructions (read by the agent)
 ├── README.md                 # This file (for human readers)
 ├── LICENSE                   # Apache-2.0 (bundled so an installed skill is self-contained)
+├── environment/              # Stage 0 build-and-run environment
+│   ├── Dockerfile            # Builds the FHE-dev container (instrumented OpenFHE + libnbfhetch)
+│   └── boot_lab.cpp          # Smoke-test program built and run by `make test-release`
 ├── references/               # Domain knowledge files read on demand
+│   ├── environment-setup.md
+│   ├── explaining-fhe-to-newcomers.md
 │   ├── fhe-privacy-model.md
 │   ├── fhe-what-fhe-can-and-cannot-do.md
 │   ├── fhe-scheme-selection.md
@@ -113,32 +118,38 @@ skills/fhe-application-design/
 │   ├── example-fetch-by-similarity.md
 │   ├── example-network-intrusion-detection.md
 │   ├── openfhe-examples-catalog.md
-│   └── implementing-with-nb-dsl.md
+│   ├── run-harness.md
+│   ├── implementing-with-openfhe.md
+│   ├── implementing-with-nb-dsl.md
+│   └── niobium-client-fog-variant.md
 └── evals/                    # Evaluation suite for skill quality
     └── evals.json
 ```
 
-The `references/` directory contains ~1,400 lines of domain knowledge that the agent reads selectively during each stage. These include worked examples (set membership search, similarity fetch, network intrusion detection), scheme selection guidance, and an OpenFHE API catalog.
+The `references/` directory contains ~2,650 lines of domain knowledge that the agent reads selectively during each stage. These include an FHE-for-newcomers explainer, worked examples (set membership search, similarity fetch, network intrusion detection), scheme selection guidance, an OpenFHE API catalog, the parallel OpenFHE and `nb` DSL implementation guides with their shared run harness, and the Niobium Fog deployment reference.
 
-The `evals/` directory contains three test prompts (credit scoring, credential search, salary statistics) with assertions for regression testing. These are development artifacts — not needed by end users, but useful for anyone modifying SKILL.md.
+The `evals/` directory contains five scenarios (credit scoring, credential search, salary statistics, and two niobium-client implementation scenarios) for regression testing. These are development artifacts — not needed by end users, but useful for anyone modifying SKILL.md.
 
 ## Version History
 
-**Iteration 4 (current)** — Eval results: 100% pass rate (36/36 assertions) across 3 eval scenarios; baseline without skill passes 88.9% (34/36).
+**v0.13.0 (current)** — Extends the methodology to eleven stages (Stages 0–10), carrying a design through implementation to a Niobium Fog deployment. The eval suite is now five scenarios (`evals/evals.json`), each pairing a prompt with an `expected_output` narrative.
 
 Changes across iterations:
 
 - **Iteration 1:** Initial 8-stage methodology with scheme selection, circuit design, parameter selection, and implementation guidance.
 - **Iteration 2:** Added Stage 1 Question 2 (single vs. independent encryptors) and Stage 5 packing-privacy cross-check. Fixes a flaw where the skill recommended column-major SIMD packing without verifying the encryption model supports it.
 - **Iteration 3:** Added output integrity via transciphering (Stage 1 Question 5, Stage 5 transciphering section, Stage 8 protocol item). Addresses the protocol flaw where a decryptor can misrepresent results to the consumer.
-- **Iteration 4:** Refined to dual-output transciphering pattern (decryptor sees result AND passes opaque symmetric ciphertext to consumer). Added honest SIMD assessment distinguishing task-level concurrency from SIMD parallelism. Added ciphertext/key size estimation formulas to Stage 6. Restructured Stage 7 around four separate programs (keygen, encrypt, server, decrypt) plus a test runner.
+- **Iteration 4:** Refined to dual-output transciphering pattern (decryptor sees result AND passes opaque symmetric ciphertext to consumer). Added honest SIMD assessment distinguishing task-level concurrency from SIMD parallelism. Added ciphertext/key size estimation formulas to Stage 6. Restructured the implementation stage around four separate programs (keygen, encrypt, server, decrypt) plus a test runner.
+- **Iteration 5:** Extended the flow to eleven stages (Stages 0–10). Stage 0 now builds the FHE-dev container from the skill's own `environment/Dockerfile` (Niobium's instrumented OpenFHE fork + `libnbfhetch`, compiled from source on first build) instead of pulling a prebuilt image. Stage 8 splits into parallel OpenFHE C++ and Niobium `nb` DSL implementation references over a shared run harness. Added Stage 10 (Fog deployment): run the app in its default Fog mode to generate an FHETCH trace, validate it through the local simulator against the twin, and optionally submit it to the Niobium Fog. Added an FHE-for-newcomers explainer and a standalone environment-setup reference, and grew the eval suite to five scenarios (adding two niobium-client implementation cases).
 
 ## Maintainer Notes
 
-If you modify SKILL.md, re-run the eval suite to verify quality. The three eval prompts exercise different FHE design patterns:
+If you modify SKILL.md, re-run the eval suite (`evals/evals.json`) to check for regressions. It holds five scenarios, each pairing a prompt with an `expected_output` that describes the design decisions a correct walkthrough must reach:
 
-- **Credit scoring** (independent encryptors, output integrity problem, logistic regression circuit) — tests transciphering, packing-privacy consistency, SIMD honesty
-- **Credential search** (single encryptor for database, no integrity problem, set membership) — tests column-major packing, scale handling, comparison circuit design
-- **Salary statistics** (multi-party, threshold/shared key considerations, aggregation) — tests multi-party awareness, packing-privacy with shared keys, low-depth circuit
+- **Credit scoring** (independent encryptors, output integrity problem, logistic regression circuit) — exercises transciphering, packing-privacy consistency, SIMD honesty
+- **Credential search** (single encryptor for database, no integrity problem, set membership) — exercises column-major packing, scale handling, comparison circuit design
+- **Salary statistics** (multi-party, threshold/shared key considerations, aggregation) — exercises multi-party awareness, packing-privacy with shared keys, low-depth circuit
+- **Fraud-flag checker** (niobium-client repo, single encryptor, server data stays plaintext, CKKS nearest-match) — exercises end-to-end implementation and a squared-distance/iterated-squaring circuit
+- **Encrypted voting tally** (nb DSL, independent encryptors) — exercises recognizing that exact integer results need BFV while the nb DSL is CKKS-only, and routing away from a naive DSL implementation accordingly
 
-The discriminating assertions — the ones the baseline fails but the skill passes — are: `output-integrity-addressed`, `packing-privacy-consistent`, `simd-honest-assessment`, and `depth-analysis` (when transciphering is relevant). These represent real protocol-level flaws that would produce insecure or broken deployments.
+The three design scenarios (credit scoring, credential search, salary statistics) target the protocol-level checks that distinguish the skill from an unguided baseline — output integrity, packing-privacy consistency, and honest SIMD assessment — which are real flaws that would produce insecure or broken deployments. The two niobium-client scenarios exercise the implementation and DSL-versus-scheme routing added in v0.13.0.
