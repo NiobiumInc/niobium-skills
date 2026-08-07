@@ -1554,9 +1554,10 @@ shell (they orchestrate processes).
 **Testing and debugging:**
 
 1. **Run and compare.** Use run_test to execute the full pipeline and review
-   the error report. Discrepancies against the plaintext reference usually
-   mean: noise budget exhausted (depth too great for parameters),
-   insufficient precision, or a missed non-linear operation.
+   the error report. Read the two deltas separately: a discrepancy against the
+   faithful twin isolates the encryption layer (noise budget exhausted from too
+   much depth, or insufficient precision), while a twin-vs-reference discrepancy
+   points at the approximation (a missed or mis-ranged non-linear operation).
 
 2. **Debug.** Debugging encrypted programs is hard because all intermediate
    values are encrypted. Build the instrumentation into the server as
@@ -1646,15 +1647,17 @@ rewrite from scratch here.
    **Open the results with a plain-language "How we know it passes" section**
    written for a non-cryptographer. Its skeleton: (a) the answer key — the
    reference's outputs on the test set, produced independently of the FHE
-   work; (b) the test — the same inputs encrypted, computed on blind by the
-   server, decrypted by the client, and compared side by side against the
-   answer key with the concrete numbers and the tolerance they clear;
+   work, which the faithful twin reproduces in the clear so the design is
+   known-good before encryption; (b) the test — the same inputs encrypted,
+   computed on blind by the server, decrypted by the client, and compared side
+   by side against the twin's outputs with the concrete numbers and the
+   tolerance they clear, isolating what encryption alone changed;
    (c) why any difference exists at all — polynomial stand-ins for smooth
    functions and a faint hiss of encryption noise, each quantified, each
    budgeted for in advance; (d) why it isn't a lucky run — the same agreement
    at every verification layer (twin, slot-level simulation, encrypted run);
    and (e) the honest caveat separating fidelity-to-the-model from
-   quality-of-the-model, so nobody reads "matches the reference" as "predicts
+   quality-of-the-model, so nobody reads "matches the twin" as "predicts
    the world well." This section is what stakeholders actually read; the
    tables below it are the evidence. *(Skeleton + the reference→ground-truth and
    twin→reference rows + parameters + Stage-6 size estimates + parts a/c-polynomial/e

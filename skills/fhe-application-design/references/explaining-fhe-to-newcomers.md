@@ -146,7 +146,8 @@ is not watching output appear without meaning. A few common ones:
 - **The plaintext reference / answer key.** "First we build the ordinary version, so
   we have something correct to check every later version against."
 - **compare_results (or the run_test comparison).** "This checks the encrypted
-  answers against the ordinary ones and reports whether they match, so we can prove
+  answers against the twin (the same computation run in the clear) and reports
+  whether they match, so we can prove
   encryption did not change the outcome."
 - **feature_bounds (the input bounds file).** "This is the safe range for each input;
   your side checks against it before encrypting, because an out-of-range value would

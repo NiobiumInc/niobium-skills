@@ -75,9 +75,7 @@ follows; produce all of them.
   `run_test.sh` (the four modes with the Fog as the default target), and `Makefile`
   described in `run-harness.md`. The pass criterion is unchanged: encrypted output
   against the harness's faithful twin (Stage 7, polynomial activations) within the
-  recorded noise tolerance, zero decision flips. The `<stage>_ref` twins apply the
-  true nonlinearities, so an encrypted-vs-`_ref` delta folds approximation error
-  into encryption error; report it as supplementary evidence only. Build the
+  recorded noise tolerance, zero decision flips. Build the
   generated `nb_out/` project, run the stage binaries in order, and report the same
   metrics: the application's own quality first, then FHE-vs-twin error, then the
   deployment profile. Wire `fhetch_sim` (`NBCC_FHETCH_SIM`,
@@ -115,8 +113,8 @@ follows; produce all of them.
    ALSO generates a `<stage>_ref` **cleartext reference twin** — the same
    `.niob` circuit with plaintext semantics (`enc<T>` → slot vectors, FHE ops →
    elementwise arithmetic, `chebyshev` → the true function). Run the `_ref`
-   pipeline alongside the encrypted one; the difference between the two
-   outputs is exactly the approximation + noise error.
+   pipeline in the clear to measure the approximation cost, the gap between the
+   polynomial circuit and the true nonlinearities, at design time.
 
 2. **Write three files** in your project directory (the current working
    directory by default):
