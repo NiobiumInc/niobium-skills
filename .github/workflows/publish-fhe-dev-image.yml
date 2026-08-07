@@ -69,12 +69,13 @@ jobs:
           push: false
           tags: ${{ steps.ref.outputs.image }}:${{ steps.ref.outputs.version }}
 
-      # Gate the push: the image must build+run OpenFHE and numpy.
+      # Gate the push: the instrumented OpenFHE must build and take the bundled
+      # examples through record -> simulate -> decrypt (a green sweep).
       - name: Smoke test
         run: |
           docker run --rm \
             "${{ steps.ref.outputs.image }}:${{ steps.ref.outputs.version }}" \
-            fhe-smoke-test
+            make test-release
 
       - name: Tag :latest and push
         run: |

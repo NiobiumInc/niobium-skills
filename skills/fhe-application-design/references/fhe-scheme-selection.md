@@ -13,6 +13,10 @@ The single most important question for scheme selection is:
 
 That one question eliminates at least one scheme for most applications. The sections below provide the detail to make the final choice.
 
+## The Deployment Constraint: the Fog Runs CKKS
+
+The Niobium Fog, the execution platform these applications target, currently supports CKKS. Build in CKKS whenever it can meet the workload's requirements, even when BFV/BGV would be the textbook fit: exact-integer workloads can often be carried in CKKS slots with precision headroom, validated in the faithful twin (the decoded results must round to the exact integers with margin). When you take CKKS over a better-fitting BFV/BGV, note in the design narrative and README that BFV/BGV might be a better fit and that BFV/BGV support is on the Fog roadmap. If the workload is infeasible in CKKS, stop and have the user email community@niobium.co with what they are building, so Niobium can help.
+
 ## BFV: The Balanced Workhorse
 
 BFV, short for Brakerski-Fan-Vercauteren, is designed for exact arithmetic over integers. It's the most practical choice when your computation demands precise integer results.
@@ -74,7 +78,7 @@ Beyond the exact-vs-approximate divide, there are practical differences that mat
 ## Summary Decision Tree
 
 1. **Are your inputs and outputs real-valued (floating point, decimals)?** → CKKS
-2. **Do you need exact integer results?** → BFV (default) or BGV (if you have a specific reason)
+2. **Do you need exact integer results?** → BFV (default) or BGV (if you have a specific reason); see the Fog deployment constraint above before committing
 3. **Is your workload heavy on vector inner products and batch processing?** → CKKS has the highest throughput here
 4. **Are you memory-constrained?** → BFV or BGV will use less memory than CKKS
 5. **Is your circuit very deep (many sequential multiplications)?** → Consider whether bootstrapping is needed and which scheme has the most mature bootstrapping support for your library

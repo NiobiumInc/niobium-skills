@@ -104,7 +104,7 @@
 
 **Manager:** Which FHE library are you aiming to use?
 
-**Dev:** OpenFHE. No question. It supports CKKS, it’s actively maintained, it’s open source, and it’s the most thoroughly tested option available. It uses CPUs to run computations. We can also get GPU support with a light lift. And, since our Niobium mistic compiler stack is integrated to OpenFHE, we get faster-than-GPU hardware acceleration for free.
+**Dev:** OpenFHE. No question. It supports CKKS, it’s actively maintained, it’s open source, and it’s the most thoroughly tested option available. It uses CPUs to run computations. We can also get GPU support with a light lift. And, since our Niobium Fog compiler stack is integrated to OpenFHE, we get faster-than-GPU hardware acceleration for free.
 
 ## **Step 9: Build and Test the FHE Version**
 

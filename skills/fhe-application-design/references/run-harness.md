@@ -1,0 +1,312 @@
+# The generated run harness (container wrapper, run_test, Makefile, .gitignore)
+
+Three small files sit at the top of the application directory and keep every
+build-and-run command short, and a generated `.gitignore` keeps the working tree
+clean. They are generated in Stage 8 and used through Stage 10. Build and run happen
+inside the FHE-dev container; only `clean` runs on the host.
+
+Contents:
+- [run-in-container.sh](#run-in-containersh) — run any command inside the image
+- [run_test.sh](#run_testsh) — the keygen → encrypt → server → decrypt pipeline, four modes
+- [Makefile](#makefile) — the clean target
+- [.gitignore](#gitignore) — ignore the build tree and per-run artifacts
+- [Build and validate](#build-and-validate) — the first build and CPU run
+
+## run-in-container.sh
+
+Runs a command in the FHE-dev image with the project mounted at `/work` (and
+`~/.fog` when present, so the Fog mode sees the API key):
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+IMAGE="${FHE_DEV_IMAGE:-ghcr.io/niobiuminc/fhe-dev:v0.13.0}"
+FOG=(); [ -d "$HOME/.fog" ] && FOG=(-v "$HOME/.fog:/root/.fog")
+exec docker run --rm -v "$PWD":/work -w /work "${FOG[@]}" "$IMAGE" bash -c "$*"
+```
+
+Give it a `--help` (and bare no-arg) path that prints the common invocations:
+`./run_test.sh`, `./run_test.sh --cpu`, `./run_test.sh --sim`, `./run_test.sh
+--help`, plus the build command, so a user finds the modes without opening the
+file.
+
+## run_test.sh
+
+Orchestrates keygen → encrypt → server → decrypt across a client home and a server
+home (the server refuses to start if a secret key is in its home; include that
+negative test), forwards the mode to `server`, then reports results in two tiers.
+
+**Lead the printed summary with the application's own quality metrics**: task
+performance measured against the ground-truth labels in the test set (accuracy,
+area under the curve, precision/recall, or task-appropriate error). This needs a
+labeled test set with real ground truth (Stage 3); the model's output distribution
+(decision counts, mean score) is no substitute, since without an expected baseline
+those numbers are not interpretable. Present the FHE comparison (decrypted output
+against the faithful twin) and the deployment profile (timings, boundary sizes,
+peak server memory) below that, as second-tier evidence.
+
+When the user is new to FHE, label these numbers in plain terms in the summary the
+user reads: what the quality metric means for the task, and what the fidelity
+comparison is telling them (that encryption did not change the answers), rather than
+a bare parameter or error dump. The raw numbers still belong in the report tables;
+`references/explaining-fhe-to-newcomers.md` covers how to phrase them.
+
+Four run modes:
+
+- **(no flag) the Fog, the default.** Targets the Niobium Fog (Stage 10). It
+  preflights for an API key (printing the sign-in / sign-up pointer if none is
+  found), and with a key present dispatches the server under `fog submit
+  … --target=`. A print-and-exit stub that never submits is incomplete; see
+  [niobium-client-fog-variant.md](niobium-client-fog-variant.md) for the concrete
+  call. The Fog target defaults to the real Fog (`FOG`); a simulator is never the
+  default. `FOG_TARGET=FUNC_SIM` is an explicit hardware-free opt-in. The record
+  pass that precedes dispatch runs **hollow** (fast trace generation; the replay
+  reconstructs the real values) — see "Hollow recording and the run modes" in
+  [niobium-client-fog-variant.md](niobium-client-fog-variant.md).
+- **`--cpu`** runs plain OpenFHE on the local CPU (the Stage 8 correctness gate).
+- **`--sim`** records **hollow** and runs the trace through the local simulator
+  (`fhetch_sim`), comparing the decrypted result to the twin. Recording hollow, it is
+  a faithful local rehearsal of the Fog run.
+- **`--sim-full`** records **real math** and runs the same local replay, plus the free
+  bit-identical ring-level ciphertext-identity check against OpenFHE (which needs a
+  real record-pass baseline). It is the thorough ground-truth run.
+
+**Why two simulator modes.** `--sim` mirrors what deploys (hollow); `--sim-full` is the
+real-math ground truth with the byte-level ciphertext check. Running both and comparing
+their decrypted results is the standing cross-check for **hollow-recording fidelity**:
+they must agree, and a divergence points at a hollow-mode bug in the toolchain rather
+than the app. Keep both; do not collapse them.
+
+Provide `-h`/`--help` listing the four modes and the env knobs:
+
+- `FOG_TARGET` sets the Fog target for the default mode (default `FOG`;
+  `FOG_TARGET=FUNC_SIM` selects the hardware-free functional simulator).
+- `RINGCHK` set to `--no-ring-dim-check` bypasses the minimum-ring-dimension
+  security floor for **local** `--cpu` / `--sim` runs only, so you can test a
+  deliberately small ring (e.g. 2^15, or a toy 2^10) fast. It is never forwarded
+  to a Fog run: the Fog runs exactly N = 2^16 and its ring-dim guard is always on,
+  so a non-2^16 ring cannot reach the Fog.
+- `NREC` sets how many records to score (a small default for `--sim` and the Fog,
+  a larger one for `--cpu`).
+
+Generate `run_test.sh` from the skeleton below. Keep the unbracketed lines as
+they are, in particular the mode parsing, the home provisioning, the negative
+test, the key preflight, and the `fog submit` dispatch; fill the `<...>`
+placeholders and the three report blocks for the application. Adapt step 5 to the
+packing mode (per-record shown; a batched design encrypts once and runs the
+server once).
+
+```bash
+#!/usr/bin/env bash
+# Generated by the Niobium FHE Application Design AI Assistant (FHEanna).
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+run_test.sh — <app>: keygen -> encrypt -> server -> decrypt, then compare to the faithful twin.
+Usage: ./run_test.sh [--cpu | --sim | --sim-full | -h]
+  (no flag)   dispatch to the Niobium Fog (default; records hollow, needs an API key)
+  --cpu       plain-OpenFHE local validation
+  --sim       hollow record -> local fhetch_sim replay -> twin compare (a Fog rehearsal)
+  --sim-full  real-math record -> replay + ring-level ciphertext-identity check vs OpenFHE
+              (compare --sim and --sim-full to surface any hollow-recording divergence)
+Env: FOG_TARGET (default FOG; FUNC_SIM = hardware-free simulator)
+     RINGCHK   (set to --no-ring-dim-check only for a deliberately small ring)
+     NREC      records to score
+EOF
+}
+
+MODE="fog"; FLAG=""; SIMFULL=0
+case "${1:-}" in
+  --cpu) MODE="cpu"; FLAG="--cpu";;
+  --sim) MODE="sim"; FLAG="--sim";;
+  --sim-full) MODE="sim"; FLAG="--sim"; SIMFULL=1;;
+  "")    MODE="fog";;
+  -h|--help) usage; exit 0;;
+  *) usage; exit 2;;
+esac
+
+FOG_TARGET="${FOG_TARGET:-FOG}"   # the real Niobium Fog; FUNC_SIM is the explicit hardware-free opt-in
+RINGCHK="${RINGCHK:-}"
+# Hollow record on the Fog default and --sim (fast, mirrors the Fog run); real math on
+# --sim-full (so the server's ring-level ciphertext-identity check has a real baseline)
+# and --cpu. init() consumes --hollow and compacts argv; the server recovers it via
+# is_hollow_mode() and brackets the circuit with enable_hollow_mode().
+HOLLOW_FLAG=""
+case "$MODE" in
+  fog) HOLLOW_FLAG="--hollow";;
+  sim) [ "$SIMFULL" = 1 ] || HOLLOW_FLAG="--hollow";;
+esac
+case "$MODE" in                   # trace modes are heavier per record than plain CPU
+  cpu) NREC="${NREC:-<n_cpu>}";; sim) NREC="${NREC:-<n_sim>}";; fog) NREC="${NREC:-<n_fog>}";;
+esac
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+BUILD="$ROOT/build"; RUN="$ROOT/run_${MODE}"
+CLIENT="$RUN/client_home"; SERVER="$RUN/server_home"
+# Clear the per-run home AND the FHETCH trace cache each run, so --sim-full records
+# real math (for its ring-level identity check) instead of reusing a hollow --sim trace.
+rm -rf "$RUN" "$ROOT"/<app>_server_workload_* "$ROOT"/nbcc_fhetch_replay_source_*; mkdir -p "$CLIENT" "$SERVER"
+
+# 1. keygen writes ALL keys into the client home
+"$BUILD/<app>_keygen" "$CLIENT"
+
+# 2. provision the server home: context, public + eval keys, model. NO secret key, NO inputs.
+cp "$CLIENT/cc.bin" "$CLIENT/pk.bin" "$CLIENT/mk.bin" "$CLIENT/rk.bin" "$SERVER/"
+cp "$ROOT/<model file>" "$SERVER/"
+[ ! -f "$SERVER/sk.bin" ] || { echo "[FATAL] secret key in server home"; exit 1; }
+
+# 3. negative test: the server must refuse to start with a secret key in its home
+cp "$CLIENT/sk.bin" "$SERVER/sk.bin"
+if "$BUILD/<app>_server" "$SERVER" $FLAG $RINGCHK >/dev/null 2>&1; then
+  echo "[FATAL] server started with a secret key present"; exit 1
+fi
+rm -f "$SERVER/sk.bin"; echo "negative test: server refused a planted secret key"
+
+# 4. Fog mode: preflight for an API key; with a key present, the dispatch below is mandatory
+if [ "$MODE" = "fog" ] && [ ! -f "$HOME/.fog/credentials" ] && [ -z "${FOG_API_TOKEN:-}" ]; then
+  echo "No Fog API key found — not dispatching."
+  echo "  Sign in:  fog login        Sign up:  https://console.niobium.co/request-account"
+  echo "  Account-free local validation:  ./run_test.sh --sim"
+  exit 0
+fi
+
+# 5. encrypt -> server -> decrypt (bounds enforcement lives in <app>_encrypt)
+for ((i=0; i<NREC; i++)); do
+  "$BUILD/<app>_encrypt" "$CLIENT" <input args> "$CLIENT/ct_x_$i.bin"
+  cp "$CLIENT/ct_x_$i.bin" "$SERVER/ct_x.bin"          # only ciphertext crosses
+  if [ "$MODE" = "fog" ]; then
+    # THE DEFAULT PATH: the server runs under `fog submit`. A default mode that
+    # preflights and exits without ever calling `fog submit` is incomplete.
+    # The Fog runs exactly N = 2^16. The ring-dim guard stays on for every Fog
+    # dispatch (RINGCHK, the local-testing bypass, is not forwarded here), so a
+    # non-2^16 ring cannot reach the Fog.
+    fog submit "$BUILD/<app>_server" "$SERVER" $HOLLOW_FLAG --target="$FOG_TARGET"
+  else
+    # --sim passes --hollow (server records hollow, skips its ring-level check);
+    # --sim-full omits it (real record, so the server's ring-level check runs).
+    "$BUILD/<app>_server" "$SERVER" $FLAG $HOLLOW_FLAG $RINGCHK   # wrap to capture wall-clock + peak RSS
+  fi
+  cp "$SERVER/ct_result.bin" "$CLIENT/ct_result_$i.bin"
+  "$BUILD/<app>_decrypt" "$CLIENT" "$CLIENT/ct_result_$i.bin" >> "$RUN/decrypted.csv"
+done
+
+# 6. report, in this order:
+#   (a) LEAD: the application's own quality metrics vs the ground-truth labels
+#       (task-appropriate: accuracy/AUC/precision-recall or regression error, plus the base rate)
+<app-specific quality block>
+#   (b) encryption fidelity: decrypted output vs the faithful twin; max/mean error against the
+#       Stage 7 noise tolerance and decision flips. This comparison is the PASS/FAIL exit code.
+<twin comparison block; exit nonzero on FAIL>
+#   (c) deployment profile: per-stage wall-clock, peak server RSS (local modes), boundary sizes
+<profile block>
+```
+
+## Makefile
+
+A `clean` target that removes everything a build or a run regenerates: the
+`build/` tree, the per-run homes (the `run_cpu/` / `run_sim/` / `run_fog/` dirs and
+any root `client_home/` / `server_home/`), and the `*_server_workload_*/` FHETCH
+trace directories. **List the run-home directories explicitly; never `rm -rf run_*`**,
+because that glob also matches `run_test.sh` and deletes the orchestrator (the same
+trap catches any generated script whose name a clean glob can hit). Keep these paths
+in sync with what the scripts create and with the `.gitignore` below.
+
+## .gitignore
+
+Ship a `.gitignore` with the application, so a fresh clone carries the sources and
+nothing a build or a run regenerates. It covers everything `clean` removes plus local
+tooling that must never be committed. The fixed lines are the same for every
+application; add this application's own trace and profile directory names by hand, and
+match the build tree to the implementation path. This is a required deliverable, not an
+afterthought: without it the run artifacts (per-run homes full of keys and ciphertexts,
+trace directories) show up as untracked and get committed by accident.
+
+Raw run outputs are build artifacts. Each mode writes them under its per-run
+`run_<mode>/` directory (the client and server homes, decrypted outputs, and the
+timing, profile, and comparison captures the summary is computed from) and into the
+trace and profile directories, all ignored by directory type alongside the build
+tree, so a run regenerates them and commits nothing. The committed reports (the
+results report and the run README) are the authored deliverables that carry the
+numbers forward; a run does not write to them.
+
+```gitignore
+# Generated by the Niobium FHE Application Design AI Assistant (FHEanna).
+# Build tree
+/build/                       # OpenFHE path
+/nb_out/build/                # DSL path (keep the generated nb_out sources)
+# Per-run homes provisioned by run_test.sh (keys, ciphertexts)
+/run_cpu/
+/run_sim/
+/run_sim-full/
+/run_fog/
+client_home/
+server_home/
+# Local tooling that must never be committed
+.venv/
+__pycache__/
+# App-specific: name this application's trace and profile directories
+/<app>_server_workload_*/
+/<app>_profile_*/
+/fhetch_driver_source_*/
+```
+
+## Build and validate
+
+Build once, then validate locally on CPU, both through the wrapper:
+
+```bash
+./run-in-container.sh "cmake -S . -B build \
+    -DCMAKE_PREFIX_PATH='/opt/niobium-client/vendor/lib/niobium-client;/opt/niobium-client/vendor/lib/openfhe' \
+    && cmake --build build -j"
+./run-in-container.sh "./run_test.sh --cpu"
+```
+
+## Documenting the run in the README
+
+The application ships a run README that assumes only Docker on the host and takes a
+newcomer from a fresh clone to a run and back to a clean tree. Order it so the usage reads
+end to end: obtain the image, run, tear down. Beyond whatever the user asked for, it
+always includes:
+
+- **Obtain the FHE-dev image.** Pull the published image, or build it from
+  `environment/`.
+- **Inputs and outputs.** Enumerate and describe the data the application consumes
+  and produces, as a table the reader can map to the code: each input feature (name,
+  meaning, unit, and expected range or the bounds the client enforces) and each
+  output field (name, meaning, unit, range). Include this **even when the data is
+  synthesized**, because a reader cannot judge or reuse the application without
+  knowing what the numbers are. For a classifier, list the classes and the base rate; for a
+  regression, the target and its units. Name the parties concretely for this
+  application (client = the user's side that holds the data and the key; server = the
+  party that computes on it), not as abstract roles.
+- **Regenerate any non-committed inputs.** The command(s) that rebuild anything not
+  committed under `data/`.
+- **DSL path: the generated `nb_out/`.** When the app is built with the `nb` DSL, note
+  in the README that the committed `nb_out/` is a readable snapshot of the `nbc` output
+  and is not pinned to a container version: the build regenerates it from the `.niob`
+  sources with the image's `nbc`, so a change under `nb_out/` after a build is expected
+  toolchain drift, and the `.niob` sources are the source of truth.
+- **Run targets, led by the Fog.** A bare `run_test.sh` targets the Niobium Fog and
+  is the default. List it **first** as the lead run command in the README (both
+  where the run steps are given and in the run-modes table), with `--cpu` and
+  `--sim` following as the local validation modes. Give each its command, its
+  expected output, and its resource needs (peak server RSS, per-stage wall-clock,
+  boundary sizes).
+- **Client/server deployment.** The two-process run and its two-host variant (copy
+  the server home to untrusted infrastructure; the secret key never leaves the
+  client).
+- **The error ledger, as a table.** Three rows: reference vs ground truth, twin vs
+  reference, FHE vs twin. Attribute each residual to its actual source (model change,
+  polynomial approximation, fixed-point quantization, encryption noise); do not fold
+  quantization into the polynomial row.
+- **Cleanup.** A `make clean` command that removes the build tree and every per-run
+  artifact. State that `clean` lists its targets explicitly and never globs `run_*`,
+  so it cannot delete `run_test.sh`. The committed inputs under `data/` (and, on the
+  DSL path, the `.niob` sources and the generated `nb_out/`) survive, so a later run
+  does not regenerate them. The same artifacts are ignored by the `.gitignore` the app
+  ships, so a run leaves the working tree clean.
+
+A recipient with Docker and the repository should need nothing else to reproduce the
+run. Draft the commands and structure at the Stage 7 gate; fill the expected-output
+blocks with the measured timings, peak RSS, and error after Stage 8.

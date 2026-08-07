@@ -17,7 +17,7 @@ license: Apache-2.0
 compatibility: OpenFHE (C++ or Python); Niobium nb FHE DSL (niobium-client)
 metadata:
   author: Niobium
-  version: 0.12.0
+  version: 0.13.0
 ---
 
 # FHE Application Design ("FHEanna")
@@ -33,12 +33,69 @@ layout, parameter selection, and implementation.
 
 ## How to Use This Skill
 
+**Two choices up front.** Before starting the stages, ask the user two questions and
+record the answers.
+
+First, their FHE experience. This sets the register for the whole conversation and
+for the generated documentation (see "Communicating with the user"):
+
+> How much have you worked with Fully Homomorphic Encryption (FHE)?
+> (a) New to FHE: keep the explanation in plain terms
+> (b) Experienced with FHE: use FHE terminology freely
+
+Second, which implementation path to build. Put the maturity of each path in the
+option label itself, not only in the sentence that follows it:
+
+> How do you want to build this application?
+> (a) Niobium DSL (alpha-stage tool): a higher-level language that expresses the
+>     computation and generates the OpenFHE program for you.
+> (b) OpenFHE directly (robust, mature library): hand-written OpenFHE, following
+>     the full stage-by-stage design below.
+
+Phrase every option in terms of the party who acts, so it is never ambiguous who
+"I" or "you" refers to when the assistant renders the choice. The assistant is
+"the assistant"; the person you are talking to is "you." (Bare "I"/"you" flips
+easily coming from an AI, so name the actor instead.)
+
+Recommend (a) the DSL to a user new to FHE, and state plainly that the DSL is
+alpha-stage while OpenFHE is robust so they can weigh it. The two choices are
+independent: an FHE beginner may still choose OpenFHE, and an expert may choose the
+DSL.
+
+Both paths follow every stage below; the language choice takes effect at Stage 8,
+where (a) implements the validated design per `references/implementing-with-nb-dsl.md`
+and (b) hand-writes OpenFHE per `references/implementing-with-openfhe.md`. Both
+target the Niobium Fog and differ only in how the program is authored.
+
+**Save the two answers as a memory** if your AI assistant supports one. Before
+writing anything, **ask the user where to save it**: for this project, or globally
+for the assistant (offer both only where your assistant distinguishes the two). Save
+it where they say; do not pick silently. Record the FHE experience level and the
+chosen implementation path so a later session resumes at the right register and path
+without re-asking.
+
+Scope the memory to *this FHE work*, not the person in general. "New to FHE" means
+new to FHE, not new to their own field or to software, so do **not** write a memory
+that says the user is a beginner at everything. The domain-familiarity answer
+(Stage 1) is likewise about one domain. Keep each memory as narrow as the question
+that produced it.
+
 Follow the stages below in order. Each stage has a brief description here in
 the SKILL.md, with pointers to reference files that contain deeper guidance.
 Read the relevant reference file when you need the detail for a given stage.
 
 The stages mirror a real FHE design process. Do not skip stages — each one
 produces inputs that the next stage depends on.
+
+**Show the user the map, and say where you are.** At the start, lay out the stages
+in a few plain sentences so the user knows the shape of what is coming and can see
+where they get to weigh in. As you work, name the stage you are entering and, in a
+sentence, why it matters, so the user is never watching files and text appear
+without knowing what stage produced them or what decision it serves. This is not
+a request for permission at every step (in self-run mode you keep moving); it is
+keeping the user oriented enough to course-correct if they want to. When the user
+is new to FHE, do this in the plain-language register described in "Communicating
+with the user" and its `references/explaining-fhe-to-newcomers.md`.
 
 **Three versions of the application.** Keep these distinct throughout — the
 whole methodology is the disciplined path from the first to the third:
@@ -70,11 +127,27 @@ the reference material.
    jargon out of it — terms like bootstrapping, modulus/level budget, rescaling,
    ring dimension, RNS limbs, relinearization, Chebyshev approximation, SIMD slot
    packing, decode/noise budget. When such a concept genuinely must appear, give
-   a one-line plain-language gloss the first time (e.g. "bootstrapping — a
+   a one-line plain-language explanation the first time (e.g. "bootstrapping — a
    refresh step that restores headroom for more computation"). Only shift into
    fluent FHE terminology if the user demonstrates FHE fluency or explicitly asks
    for the depth. Reserve the full vocabulary for code, references, and the
    evidence tables in reports — not the back-and-forth.
+
+   **This governs the generated documentation too.** Write the README and
+   user-facing report prose at the FHE experience level the user gave in the
+   up-front question: beginner by default (plain language, no cryptography
+   terminology, explain any unavoidable term), full FHE/CKKS terminology for a
+   self-identified expert.
+
+   **Be a teacher, not only an executor.** For a user new to FHE, explain as you
+   build. Read `references/explaining-fhe-to-newcomers.md` and use it whenever you
+   name a term, present a design choice, or report a result. Never narrate a design
+   point as a bare parameter list ("Chebyshev degree 59, scaling 45, depth 11"); say
+   what it buys the user and what it costs, in their terms.
+
+   **The starting register is not permanent.** If a user who selected "experienced"
+   keeps asking what FHE terms mean, switch to the plain-language register and the
+   newcomer reference for the rest of the session.
 
 2. **Spell out every acronym on first use.** In conversation and in report
    prose, write the expansion the first time and the acronym thereafter —
@@ -85,8 +158,9 @@ the reference material.
    is common knowledge.
 
 3. **Ask about application-domain familiarity early, and adapt to it.** FHE
-   familiarity is assumed low (rule 1) and is *not* worth asking about. But
-   *application*-domain familiarity varies widely and is worth one question. At
+   familiarity is already captured by the up-front question (see "Two choices up
+   front"), so it is not re-asked here. But *application*-domain familiarity varies
+   widely and is worth its own question. At
    the start of Stage 1 — once you know the workload's domain (from the reference
    package or the user's problem statement) — ask the user to self-rate their
    familiarity with **that specific domain**, e.g.:
@@ -99,7 +173,8 @@ the reference material.
    Record the answer and calibrate *application-domain* terminology to it: for
    (a), introduce domain terms in plain language and avoid unexplained jargon;
    for (c), use domain terms freely. If the user doesn't answer, default to (a).
-   This axis is independent of the FHE register, which stays plain regardless.
+   This axis is independent of the FHE register (rule 1), which follows the user's
+   FHE self-identification.
 
 ## Attribution notice on every generated artifact
 
@@ -132,29 +207,34 @@ toolchain discovered three stages into a design is the most avoidable kind of
 frustration. Treat it as a gate: do not start Stage 1 until the smoke test
 passes.
 
-The setup is deliberately small because the work runs at two speeds:
+The work runs at two speeds:
 
 - **The light tier (Stages 1–7) — always run it yourself.** The design, the
   parameter sweep, and the twin-vs-reference validation are pure Python (numpy)
   and run in your own environment as you converse.
-- **The heavy, containerized tier (Stage 8, and the optional Stage 10 Fog variant) — the
-  prebuilt FHE-dev image.** Building and running the encrypted OpenFHE app is too
-  heavy for a light environment, so it happens in a prebuilt **FHE-dev** image.
-  You **pull** this image — you never build OpenFHE from source. *Who* runs the
-  container depends on your execution mode (below), not on which product the user
-  is in.
+- **The heavy, containerized tier (Stages 8 and 10) — the FHE-dev image.**
+  Building and running the encrypted OpenFHE programs is too heavy for a light
+  environment, so it happens in the **FHE-dev** image, built from the skill's
+  Dockerfile. The image ships Niobium's instrumented OpenFHE fork and
+  `libnbfhetch`, so it runs the programs on CPU and generates the FHETCH trace the
+  Fog runs. The Niobium Fog is the execution platform these applications are built
+  for; the CPU and simulator runs validate correctness before deployment. *Who*
+  runs the container depends on your execution mode (below), not on which product
+  the user is in.
 
 Three one-time steps:
 
 1. Install Docker (Docker Desktop on macOS/Windows) if it isn't already present
-   — the only unavoidable local install, and far easier than building OpenFHE.
-2. Pull the image: `docker pull ghcr.io/niobiuminc/fhe-dev:v0.7.0` — the
-   pinned release this skill version was validated against (`:latest` tracks
-   the newest release; prefer the pin for reproducibility).
+   — the only unavoidable local install.
+2. Get the FHE-dev image: pull the prebuilt image from the GitHub Container Registry
+   (`docker pull ghcr.io/niobiuminc/fhe-dev:v0.13.0`), or build it from the skill's
+   `environment/` directory (`docker build -t ghcr.io/niobiuminc/fhe-dev:v0.13.0
+   environment`). The first build clones niobium-client and compiles the instrumented
+   OpenFHE from source, which is the one heavy step; allow time for it.
 3. Run the smoke test:
-   `docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.7.0 fhe-smoke-test`. It builds
-   and runs a trivial OpenFHE program and a numpy stub; a final `SMOKE OK` means
-   the environment is ready.
+   `docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.13.0 make test-release`. It
+   takes the bundled examples through record, simulate, and decrypt; a green
+   sweep means the environment is ready.
 
 **Determine your execution mode at this step — probe, don't assume.** Try to run
 the smoke test in *your own shell*. Two outcomes:
@@ -179,7 +259,7 @@ compiling the source you wrote and writing results back into the same folder; th
 container is a plain build box — you, not the container, do the design.
 
 **A capacity limit is separate from execution mode.** Even in self-run mode a
-particular step may exceed the local machine (e.g. replaying a deep bootstrapped
+particular step may exceed the local machine (e.g. running a deep bootstrapped
 circuit that needs a large-memory host). That is a *capacity* hand-off of one
 step to a bigger box or the compilation service — decided on resources, not on
 whether you can run Docker at all.
@@ -391,16 +471,39 @@ structure already in place:
    test data. This becomes the ground truth that every subsequent version is
    tested against.
 
-   **Firm requirement for machine-learning workloads:** the user must bring a
-   complete plaintext implementation of the model AND a representative test
-   set with expected outputs before any FHE design work proceeds. This is not
-   optional. Every FHE design decision downstream — Chebyshev approximation
+   **Firm requirement for machine-learning workloads:** a complete plaintext
+   implementation of the model AND a representative test set with expected outputs
+   must be in hand before any FHE design work proceeds, whether provided by the user
+   or sourced/synthesized per the next block. This is not optional. Every FHE design
+   decision downstream — Chebyshev approximation
    degree, scaling modulus size (q_i), multiplicative depth, ring dimension —
    trades accuracy against security and performance, and those trades can
    only be evaluated against END-TO-END MODEL ACCURACY on real test data, not
    against per-operation error bounds. Without the plaintext model and test
    set there is no way to tell whether a cheaper parameter choice costs 0.1%
    accuracy or destroys the model.
+
+   **When the workload is ML, ask where the model and labeled data come from.**
+   Offer these options in order, most complete starting point first; name the actor
+   in each so it is never ambiguous who does what. Synthesizing everything is the
+   last resort, not the recommendation. It produces a proof of concept the user
+   swaps real data into later:
+   - **You have the model and the data** (a complete starting point): use both as
+     given; confirm the test set carries the labels the metric needs.
+   - **You have the data but no model** (you want help with *how* to evaluate): use
+     the user's data as ground truth and build the plaintext reference model to it.
+   - **Have the assistant get a real, representative dataset and model:** look up the
+     standard datasets and models for this task and choose primarily by *popularity*
+     (usage, citations, benchmarks), the strongest signal of a sound choice; cite the
+     dataset's URL in the README so the user can vet provenance and licensing.
+   - **Have the assistant synthesize the data and model** (a proof of concept; swap
+     in real data later): look up how data for this task is conventionally generated
+     (feature distributions, typical base rates), then generate an *independent*
+     ground truth and fit the model to predict it: sample labels from a true latent
+     function with noise and a chosen base rate, never from the model's own
+     thresholded output (trivial self-agreement, and the base rate becomes a dial).
+     Report the task metrics against those labels plus the base rate, and state
+     plainly in the docs that the data and model are synthetic.
 
    **Pick the metric to match the task.** For rare-class workloads (fraud,
    intrusion, anomaly detection) raw accuracy and even decision-agreement are
@@ -579,6 +682,17 @@ Three field notes on rung c (from applying it in practice):
   set plus a safety margin, and document the residual escape risk (Stage 9)
   with its packing-dependent blast radius and mitigation.
 
+When is a bound cheap enough to prove? The envelope preference above applies
+where interval bounds go uselessly loose (unbounded activations, long
+multiplicative chains, recurrent state). But whenever the operand is one step
+from a known hard range (a pre-activation one linear layer from the committed
+input box, a normalized inner product, a squared distance over a box, a sum of
+bounded slots, a layer fed by a saturating activation), the worst-case bound is
+one line of arithmetic. Sweep the provable interval first and take it if the
+affordable degree still meets the floor there: under batched packing it makes
+the airtight-filter requirement hold against the input contract rather than the
+sample. Otherwise fall back to the envelope plus margin as above.
+
 #### Filter, don't force: the two-threshold check and the composition guard
 
 When a tight domain is accurate but a few records escape it, the right move is to
@@ -664,7 +778,18 @@ Choose among the three arithmetic FHE schemes supported by OpenFHE:
 
 The core decision: if your computation works on real-valued data and can
 tolerate small approximation errors, use CKKS. If you need exact integer
-results, use BFV.
+results, BFV is the textbook fit, subject to the deployment constraint below.
+
+**The Fog currently runs CKKS, so build in CKKS whenever it can meet the
+requirements.** These applications target the Niobium Fog (Stage 0), and a CKKS
+formulation that clears the accuracy floor keeps the whole pipeline on it, even
+when BFV/BGV would be the textbook fit. Exact-integer workloads can often be
+carried in CKKS slots with precision headroom; validate in the Stage 7 twin that
+the decoded results round to the exact integers with margin. When you take CKKS
+over a better-fitting BFV/BGV, say so in the design narrative and README: BFV/BGV
+might be a better fit, and BFV/BGV support is on the Fog roadmap. If the workload
+is infeasible in CKKS, stop and have the user email community@niobium.co with
+what they are building, so Niobium can help.
 
 **For detailed guidance:** Read `references/fhe-scheme-selection.md`
 
@@ -862,12 +987,13 @@ The key parameters for CKKS (and analogous choices for BFV/BGV):
 
 - **Ring dimension (N).** Determines the number of SIMD slots (N/2 for CKKS,
   N for BFV/BGV) and the achievable security level for a given modulus size.
-  **The backend floor is currently 2^16 (65,536); the hardware does not yet
-  support 2^15.** Smaller N is attractive — fewer slots but smaller ciphertexts
-  and faster ops — and may become supported, so treat this as a deployment
-  constraint, not a permanent rule. **Default to N = 2^16.** Only author 2^15 if
-  the user explicitly approves it for performance; if they don't approve, use
-  2^16 as the floor. Consent does not waive security: N must still be large
+  **The Niobium Fog runs exactly one ring dimension: N = 2^16 (65,536).** Any
+  application that will run on the Fog must use N = 2^16; a ring dimension other
+  than 2^16 cannot run on the Fog, and the run harness never bypasses the
+  ring-dim guard on a Fog run. **Default to N = 2^16 for every application.** A
+  smaller ring (2^15, or a toy 2^10) is useful only for fast local `--cpu` /
+  `--sim` testing and experimentation and must never be dispatched to the Fog.
+  Sizing still has to be secure: N must be large
   enough that the total modulus `logQ` is secure at the target level — compute
   `logQ ≈ first_mod + depth × scaling_mod` (plus the hybrid key-switching special
   modulus, which adds materially) and confirm the chosen N is secure for it. For
@@ -876,7 +1002,7 @@ The key parameters for CKKS (and analogous choices for BFV/BGV):
   explicitly** — in OpenFHE, `CCParams<CryptoContextCKKSRNS>::SetRingDim(65536)`
   — rather than relying on it being inferred from the batch/slot count. An
   under-set ring silently drops below the floor and fails key generation. (If you
-  take the optional DSL path, the equivalent is a literal `ring_dim` in the
+  take the DSL path, the equivalent is a literal `ring_dim` in the
   `scheme` block; don't carry it only on the `Instance` struct, or codegen falls
   back to `n_slots` = N/2.)
 
@@ -1120,9 +1246,24 @@ log2(Q) = first_mod + depth x q_i; log2(Q) and the security target set the
 minimum ring dimension N; N sets performance. Run this sweep against the
 **faithful twin** (Stage 7), not the encrypted build: the twin measures each
 sweep point's accuracy in seconds without re-running encryption. (If you take
-the optional DSL path, its compiler also surfaces this frontier at compile time —
+the DSL path, its compiler also surfaces this frontier at compile time —
 Chebyshev depth charging and a params note mapping logQ to the minimum N per
 security level.)
+
+**Pick the cheapest passing point.** Prefer the lowest approximation degree (and
+depth) that meets the goal floor; precision beyond the requirement is overkill
+paid for in depth, ciphertext size, and server time. A higher degree is justified
+only by a stated program attribute the cheaper point misses (an accuracy,
+precision/recall, or decision-agreement target); when you take one, name the
+attribute that required it.
+
+When you surface this choice to the user rather than just taking the cheapest
+passing point, present it as a functional tradeoff, not as degrees and flip counts:
+what the more accurate option buys (how much more quality, on what) against what it
+costs (run time, money), with your recommendation. "Same speed either way, so take
+the more accurate one" and "fifteen more correct calls in fifty thousand, but about
+thirty minutes longer per run" are decisions a user can make; "degree 59 vs 119" is
+not. See `references/explaining-fhe-to-newcomers.md`.
 
 **When the sweep cannot win, walk the Stage 3 ladder — ending in a model
 change.** If the whole in-budget sweep is exhausted and no point meets the
@@ -1250,26 +1391,29 @@ blanks and confirming the pre-written docs*, not writing from scratch.
 
 ## Stage 8: Implement the FHE Program
 
-Only after the twin is validated and approved. Implement in **OpenFHE C++** —
-the single first-class path here: the models this skill runs on are
-OpenFHE-native (far more public OpenFHE than DSL code to learn from), so it is
-the most reliable target.
+Only after the twin is validated and approved. This stage has a **path-independent
+contract**: the four-program architecture, the deliverables, and the validation
+below apply however you build. Implement it via the path chosen up front (see
+"Two choices up front"):
+
+- **OpenFHE C++** — hand-written OpenFHE. The build mechanics (CMake, the shared
+  `run_circuit`, serialization, context features) are in
+  `references/implementing-with-openfhe.md`.
+- **The `nb` DSL** — express the computation in ~3 short `.niob` files and let the
+  `nbc` cross-compiler generate the same four-program pipeline (the split,
+  serialization, CMake, key generation, record/replay), with compiler-enforced
+  `@client`/`@server` trust boundaries. It is CKKS-only. See
+  `references/implementing-with-nb-dsl.md`.
+
+Both paths produce the same four-program structure and must satisfy the deliverable
+contract in this stage (`run_test`, the client/server demo, client-side bounds
+enforcement, twin validation). A BFV/BGV design uses the OpenFHE path.
 
 **Build in the current working directory by default.** Generate the application
 in your current working directory unless the user explicitly directs otherwise.
 Do not create files inside the niobium-client repository (e.g., under
 `dsl_fhe/examples/`) or modify its `Makefile`/build files **unless the user
 explicitly asks to do that**.
-
-**Optional DSL path.** Niobium also ships an `nb` FHE DSL (in
-[niobium-client](https://github.com/NiobiumInc/niobium-client)'s `dsl_fhe/`) that
-generates the whole pipeline — the four-program split, serialization, CMake, key
-generation, record/replay — from ~3 short `.niob` files, with compiler-enforced
-`@client`/`@server` trust boundaries. It is CKKS-only and has far fewer public
-examples than OpenFHE, so treat it as an optional convenience, not the default.
-If you use it, **read `references/implementing-with-nb-dsl.md`** for the
-design-output → DSL mapping, workflow, and limitations. The rest of this stage
-describes the OpenFHE implementation the DSL would otherwise generate.
 
 ### The four-program architecture
 
@@ -1302,32 +1446,30 @@ can be deployed independently:
    (Stage 7). Validation against the twin belongs to run_test (item 5 below),
    not to decrypt — keep the production binary free of test-only inputs.
 
-Use CMake with `find_package(OpenFHE)` for all four programs. **Use this exact
-include/link block — OpenFHE splits its headers across `core/`, `pke/`, and
-`binfhe/`, and `pke` transitively includes `binfhecontext.h` from `binfhe/`, so
-omitting any of them fails with `fatal error: binfhecontext.h: No such file or
-directory`:**
+**Enforce the declared input bounds on the client path (both implementation
+paths).** Whatever Stage 5 chose (reject or winsorize), the `encrypt` program, or
+the client harness that feeds it, reads the committed bounds file and rejects or
+clips before encrypting. A bounds file no program reads is not enforcement; an
+out-of-domain input then breaks decode-safety silently.
 
-```cmake
-find_package(OpenFHE REQUIRED)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenFHE_CXX_FLAGS}")
+**Ship a container wrapper, a `run_test.sh`, and a `Makefile`** at the top of the
+application directory so the build-and-run commands stay short. Their full spec is
+in `references/run-harness.md`: the three files, the four `run_test` modes with the
+Fog as the default target, the `FOG_TARGET` / `RINGCHK` / `NREC` knobs, the build
+command, and the `clean` target. Read it before authoring the harness; three of its
+directives are non-negotiable (the default run dispatches the server under `fog
+submit`, never a preflight-only stub; `run_test` leads its output with the
+application's own quality metrics; and `clean` lists its run directories explicitly,
+never `rm -rf run_*`).
 
-add_executable(server server.cpp)      # likewise keygen / encrypt / decrypt
-target_include_directories(server PRIVATE
-    ${OpenFHE_INCLUDE}
-    ${OpenFHE_INCLUDE}/third-party/include
-    ${OpenFHE_INCLUDE}/core
-    ${OpenFHE_INCLUDE}/pke
-    ${OpenFHE_INCLUDE}/binfhe)
-target_link_libraries(server PRIVATE ${OpenFHE_SHARED_LIBRARIES})
-```
+Build once, then validate locally on CPU with `./run_test.sh --cpu` before moving
+on.
 
-Link via `${OpenFHE_SHARED_LIBRARIES}` rather than naming targets by hand
-(robust across OpenFHE releases). Enable PKE, KEYSWITCH, and LEVELEDSHE
-features on the crypto context. Enable ADVANCEDSHE if using Chebyshev
-evaluation or advanced rotation patterns. Use OpenFHE's serialization API
-(Serial::SerializeToFile / Serial::DeserializeFromFile) for all inter-program
-data exchange.
+**Factor the circuit into one shared function** so every run mode (CPU, the
+simulator, and the Fog) executes the identical math and the modes cannot diverge.
+Each path's reference shows how: the shared `run_circuit` in
+`references/implementing-with-openfhe.md`, shared circuit functions in
+`references/implementing-with-nb-dsl.md`.
 
 **Why four programs:** This structure makes the trust boundaries from Stage 1
 concrete in the code. Each boundary between programs is a serialization point
@@ -1372,9 +1514,9 @@ Also produce a fifth program:
    convenience of one folder silently violates the trust boundary the four
    programs exist to enforce.
 
-**Demonstrate the architecture as separate processes (gating item).** The
-four-program split makes the trust boundary concrete in code; a
-deployment-shaped demo must make it concrete in process and network topology.
+**Run the app as a client/server deployment across separate processes (gating
+item).** The four-program split makes the trust boundary concrete in code; a
+client/server deployment must make it concrete in process and network topology.
 Before considering an application done, stand the client and server up as
 separate OS processes that communicate only over HTTP/sockets, exchanging
 serialized ciphertext — never keys or plaintext. A single process that plays
@@ -1405,14 +1547,18 @@ Requirements for the demo:
 This is inexpensive — a few dozen lines of glue around the four binaries — and
 it is the artifact that most convincingly communicates the shape of an FHE
 solution to stakeholders. Treat it as part of the deliverable, not an optional
-extra.
+extra. Write the demo glue in Python: a small stdlib `http.server` wrapper
+around the binaries handles the HTTP transport, byte-count logging, and the
+configurable server URL cleanly. `run_test.sh` and `run-in-container.sh` stay
+shell (they orchestrate processes).
 
 **Testing and debugging:**
 
 1. **Run and compare.** Use run_test to execute the full pipeline and review
-   the error report. Discrepancies against the plaintext reference usually
-   mean: noise budget exhausted (depth too great for parameters),
-   insufficient precision, or a missed non-linear operation.
+   the error report. Read the two deltas separately: a discrepancy against the
+   faithful twin isolates the encryption layer (noise budget exhausted from too
+   much depth, or insufficient precision), while a twin-vs-reference discrepancy
+   points at the approximation (a missed or mis-ranged non-linear operation).
 
 2. **Debug.** Debugging encrypted programs is hard because all intermediate
    values are encrypted. Build the instrumentation into the server as
@@ -1502,15 +1648,17 @@ rewrite from scratch here.
    **Open the results with a plain-language "How we know it passes" section**
    written for a non-cryptographer. Its skeleton: (a) the answer key — the
    reference's outputs on the test set, produced independently of the FHE
-   work; (b) the test — the same inputs encrypted, computed on blind by the
-   server, decrypted by the client, and compared side by side against the
-   answer key with the concrete numbers and the tolerance they clear;
+   work, which the faithful twin reproduces in the clear so the design is
+   known-good before encryption; (b) the test — the same inputs encrypted,
+   computed on blind by the server, decrypted by the client, and compared side
+   by side against the twin's outputs with the concrete numbers and the
+   tolerance they clear, isolating what encryption alone changed;
    (c) why any difference exists at all — polynomial stand-ins for smooth
    functions and a faint hiss of encryption noise, each quantified, each
    budgeted for in advance; (d) why it isn't a lucky run — the same agreement
    at every verification layer (twin, slot-level simulation, encrypted run);
    and (e) the honest caveat separating fidelity-to-the-model from
-   quality-of-the-model, so nobody reads "matches the reference" as "predicts
+   quality-of-the-model, so nobody reads "matches the twin" as "predicts
    the world well." This section is what stakeholders actually read; the
    tables below it are the evidence. *(Skeleton + the reference→ground-truth and
    twin→reference rows + parameters + Stage-6 size estimates + parts a/c-polynomial/e
@@ -1519,13 +1667,15 @@ rewrite from scratch here.
    measured deployment numbers (peak server RSS, timings, actual boundary sizes),
    part d "not a lucky run," and the final PASS.)*
 
-3. **A run README** in the application directory: prerequisites (Docker + the
-   FHE-dev image), how to regenerate any non-committed inputs, the
-   build+run_test command with expected output and resource needs, and how to
-   run the two-process demo including the two-host variant. A recipient with
-   Docker and the repository should need nothing else to reproduce the
-   encrypted run. *(Commands and structure drafted at the gate; here fill the
-   "expected output" block with the measured timings, peak RSS, and error.)*
+3. **A run README** in the application directory. It assumes only Docker on the
+   host and takes a newcomer from a fresh clone to a run and back to a clean tree. Its
+   full structure is in `references/run-harness.md` ("Documenting the run in the
+   README"): obtaining the FHE-dev image, regenerating inputs, the Fog-led run
+   targets with their expected output and resource needs, the two-process/two-host
+   deployment, the error-ledger table (each residual attributed to its source), and
+   cleanup via `make clean`. Draft the commands and structure at the Stage 7 gate;
+   here fill the "expected output" blocks with the measured timings, peak RSS, and
+   error.
 
 This documentation serves both as a security specification and as a guide
 for anyone reviewing or extending the application.
@@ -1534,68 +1684,77 @@ for anyone reviewing or extending the application.
 `references/example-set-membership.md`, which includes a complete threat model
 and security analysis.
 
-## Stage 10: Optional Fog Deployment Variant
+## Stage 10: Run the Fog Deployment (`app/`)
 
-The CPU OpenFHE application is now built, validated (`run_test` green against the
-twin, the two-process demo standing), **and fully documented** (Stage 9). That is
-a complete, self-contained deliverable. This is the point — and the only point —
-to consider an additional deployment target, because the canonical design is now
-frozen and described.
+`app/` is built and its CPU run is validated (`run_test --cpu` green against the
+twin, the two-process demo standing) and documented (Stage 9). The **same binary**
+generates the FHETCH trace and targets the Fog; there is no second build and no
+separate directory. Every mode runs the identical computation: `--cpu` serializes
+the OpenFHE result, while `--sim`, `--sim-full`, and the default all record the
+`.fhetch` trace and differ only in how it is recorded (hollow vs real math) and where
+it is reconstructed (local `fhetch_sim` vs the Fog).
 
-**Ask the user, as a concrete choice — do not skip it silently, and do not emit
-anything without an explicit yes.** Put it plainly: the core CPU deliverable is
-finished and documented; would they like a second build of the *same* validated
-design that runs through the **Niobium Mistic / Fog** path? Offer exactly two
-answers — **emit the Fog variant**, or **stop here** — and act on the reply.
-Proceed into the steps below only on an explicit yes.
+### Validate locally through the simulator (`--sim` / `--sim-full`) — required
 
-The Fog variant is a **deployment-target build of a known-good design, not a new
-design path.** niobium-client records the identical computation as a FHETCH
-Polynomial IR trace through its instrumented OpenFHE, replays that trace in a
-**local simulator to validate it**, and can then submit it to the Niobium
-compilation service for hardware deployment. No circuit, weights, parameters, or
-packing change.
+Run the app with `--sim` and verify the result the same way the `--cpu` run was
+verified, against the faithful twin, through the local `fhetch_sim`, so it is fast
+and needs no Fog account. `--sim` records **hollow** — the same as the Fog default —
+so it is a faithful local rehearsal of the deployed run. `--sim-full` records **real
+math** and adds the ring-level ciphertext-identity check:
 
-### Emit the variant
+```bash
+./run-in-container.sh "./run_test.sh --sim"        # hollow record -> fhetch_sim -> compare vs twin
+./run-in-container.sh "./run_test.sh --sim-full"   # real record + ring-level identity check
+```
 
-- **Location.** Emit it as a parallel directory in the *application* repo —
-  `fhe-design/app-fog/` next to `fhe-design/app/` (mirroring the `app-gpu/`
-  convention). Never write into the niobium-client repository; it is only a
-  build-time dependency.
-- **Instrument, don't redesign.** The Fog server runs the identical circuit —
-  same weights, parameters, packing — bracketed with `niobium::compiler()`
-  record/replay. Make this structural: factor the circuit body into a shared
-  `run_circuit(...)` in `common.hpp` that *both* the plain server and the Fog
-  server call, so the math cannot drift. Only the **server** is instrumented
-  (it is the compute); keygen/encrypt/decrypt are reused unchanged as the client
-  side.
-- **Build.** Link niobium-client's `niobium_fhetch` (graft `app-fog/` into a
-  niobium-client checkout's `examples/` and `make build-release`); pass
-  `--no-ring-dim-check` for N = 2^16, and confirm the instrumented OpenFHE
-  version matches the app's (the FHE-dev image line).
-- **Distinct from the `nb` DSL path.** The DSL rewrites the computation and
-  generates OpenFHE; this add-on instead *reuses the finished OpenFHE app*
-  through niobium-client's instrumented-OpenFHE entry point. Do not conflate them.
+- **To the same bar.** The session writes the `.fhetch` trace and the simulator
+  reconstructs the result from it; that result must reproduce the twin within the
+  **encryption-noise tolerance recorded in Stage 7, with zero decision flips**,
+  the identical `run_test` criterion the `--cpu` run cleared.
+- **Ring-level identity check (free, `--sim-full`).** A real-math record also yields a
+  bit-identical "simulator vs OpenFHE" ring-level comparison: the `--sim-full` run and
+  the `--cpu` run must agree exactly at the ring level, confirming the trace captured
+  the computation faithfully before it ever reaches hardware. (Under hollow the
+  record-pass ciphertext is a placeholder, so this check runs in `--sim-full`, not
+  `--sim`.)
+- **Hollow-fidelity cross-check.** `--sim` (hollow) and `--sim-full` (real) must
+  reconstruct the same decrypted result; a divergence is a hollow-recording bug in the
+  toolchain, not the app.
+- The **minimum-ring-dimension check** (a security floor) stays on — it passes at
+  N = 2^16. `--no-ring-dim-check` is an explicit opt-in for a sub-standard ring, not
+  a default.
+- Report both results in the Stage 9 results report as the Fog row: "same
+  design, validated on the Fog path by simulation."
 
-### Validate by simulation
+### Deploy to the Fog (default mode) — needs an API key
 
-The Fog variant is verified the same way the CPU app was — against the faithful
-twin — but through niobium-client's **local simulator** rather than an encrypted
-run, so it is fast and needs no new ground truth:
+The default mode records the trace and dispatches it to the Niobium Fog rather
+than the local simulator, so it needs a Fog **API key**. The server preflights for
+one (`~/.fog/credentials`, written by `fog login`, or `FOG_API_TOKEN`) and, when
+none is found, prints a friendly pointer instead of failing cryptically or
+silently falling back to the simulator:
 
-- **Replay to the same bar.** The simulator replay of the recorded trace must
-  reproduce the twin within the **encryption-noise tolerance recorded in Stage 7,
-  with zero decision flips** — the identical `run_test` pass criterion the CPU
-  build had to clear.
-- **Ring-level identity check (free).** The record step also yields a
-  bit-identical "simulator vs OpenFHE" ring-level comparison: the instrumented
-  run and the plain OpenFHE run must agree exactly at the ring level, confirming
-  the trace faithfully captured the computation before it ever reaches hardware.
-- Report both results as an addendum alongside the Stage 9 results report — the
-  Fog row is "same design, validated on the Mistic path by simulation."
+```
+This program runs on the Niobium Fog and needs an API key, but none was found.
+  • Sign in:  fog login                                   (mints a key from your account)
+  • Sign up:  https://console.niobium.co/request-account
+  • No account yet? Validate locally instead:   <app> --sim
+```
+
+With a key, deploy through the `fog` CLI (baked into the image), which provisions
+a worker, wires its endpoint into `NBCC_FHETCH_SERVER`, and runs the app against
+it — the circuit is unchanged; only where `replay()` dispatches differs. The
+wrapper mounts `~/.fog` when present, so once you have a key it just works:
+
+```bash
+# once — mint a key (interactive):
+docker run --rm -it -v "$HOME/.fog":/root/.fog ghcr.io/niobiuminc/fhe-dev:v0.13.0 fog login
+# deploy to the Fog (the default — no flag); the server step runs under `fog submit`:
+./run-in-container.sh "./run_test.sh"
+```
 
 **For the full how-to:** Read `references/niobium-client-fog-variant.md` (layout,
-the exact `niobium::compiler()` recording pattern, CMake, the graft build recipe,
+the exact `niobium::compiler()` recording pattern, the in-container build,
 simulation verification, and trace submission).
 
 ## Reference Files
@@ -1608,10 +1767,13 @@ self-contained and can be read independently.
 | `references/environment-setup.md` | Stage 0: preparing the build-and-run environment (Docker, the FHE-dev image, the smoke test, the mounted-folder data bus) |
 | `references/fhe-privacy-model.md` | Stage 1: establishing the privacy model (parties, adversaries, output privacy, differential privacy) |
 | `references/fhe-what-fhe-can-and-cannot-do.md` | Stage 2: assessing whether a workload is FHE-feasible |
+| `references/explaining-fhe-to-newcomers.md` | All stages, when the user is new to FHE: how to explain terms, tradeoffs, parties, and results in plain, functional terms |
 | `references/fhe-scheme-selection.md` | Stage 4: choosing between CKKS, BFV, and BGV |
 | `references/building-your-first-fhe-application.md` | Stages 3, 6, 8: the development checklist from plaintext through implementation |
-| `references/implementing-with-nb-dsl.md` | Stage 8 (optional DSL path): implementing the design in the `nb` FHE DSL (niobium-client) — stage-to-construct mapping, workflow, pitfalls, limitations |
-| `references/niobium-client-fog-variant.md` | Stage 10 (optional Fog variant): emitting a niobium-client / Mistic build of a validated OpenFHE app — `app-fog/` layout, the `niobium::compiler()` record/replay pattern, CMake, graft build recipe, simulation verification |
+| `references/run-harness.md` | Stages 8, 10: the generated run scaffold (run-in-container.sh, run_test.sh with its four run modes, metrics, and env vars, the Makefile clean target) and how to document the run end to end in the README (Stage 9) |
+| `references/implementing-with-openfhe.md` | Stage 8 (OpenFHE path): the OpenFHE C++ build mechanics — CMake/linking, context features and serialization, the shared `run_circuit` |
+| `references/implementing-with-nb-dsl.md` | Stage 8 (DSL path): implementing the design in the `nb` FHE DSL (niobium-client) — stage-to-construct mapping, the deliverable contract in DSL form, workflow, pitfalls, limitations |
+| `references/niobium-client-fog-variant.md` | Stage 10: running the niobium-client Fog deployment (`app/`) of a validated OpenFHE app (`app/` layout, the `niobium::compiler()` recording pattern, the in-container build, simulation verification, trace submission) |
 | `references/fhe-application-dialogue.md` | Stages 3–8: a worked example showing all steps for a real anomaly detection application |
 | `references/example-set-membership.md` | Stages 5–9: complete CKKS design spec and implementation (squared distance, iterated squaring, column-major packing, threat model) |
 | `references/example-fetch-by-similarity.md` | Stage 5: advanced CKKS patterns (Chebyshev approximation, slot replication, running sums, output compression) |
@@ -1639,6 +1801,15 @@ Throughout the design process, keep these principles in mind:
 - **Plaintext correctness is ground truth.** Get the algorithm working
   correctly in the clear before introducing encryption. Every subsequent
   version is tested against this reference.
+
+- **Application quality is the goal; twin fidelity is a diagnostic.** The
+  measure of an application is its task quality against ground truth
+  (accuracy, precision/recall, error in real units). The encrypted-vs-twin
+  comparison exists to isolate encryption error so a quality delta can be
+  attributed to the right stage; it can only confirm that encryption preserved
+  whatever quality the design already had. Lead every conversation, README,
+  report, and printed summary with task quality, and present fidelity as
+  supporting evidence.
 
 - **The faithful twin is the executable spec.** Distinct from the ideal
   plaintext reference: the twin runs the exact circuit (same polynomials,
