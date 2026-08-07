@@ -212,6 +212,9 @@ whole-app switch, or hand-written C++ behind an `extern_call` when the rest of t
 app fits the DSL. Reach for this only once the DSL genuinely cannot express what
 you need. The generated `nb_out/` is OpenFHE too, so that reference also helps you
 read or debug it; do not hand-edit `nb_out/`, since it regenerates on recompile.
+Commit `nb_out/` so a reviewer can read the generated circuit, and note in the README
+that it is a snapshot the build regenerates from the `.niob` sources with the image's
+`nbc`, not pinned to a container version.
 
 - **BFV / BGV** — the codegen targets CKKS only.
 - **Transciphering** (Stage 5 output-integrity dual output) — no DSL

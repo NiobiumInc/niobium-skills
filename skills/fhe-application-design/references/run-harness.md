@@ -275,6 +275,11 @@ always includes:
   party that computes on it), not as abstract roles.
 - **Regenerate any non-committed inputs.** The command(s) that rebuild anything not
   committed under `data/`.
+- **DSL path: the generated `nb_out/`.** When the app is built with the `nb` DSL, note
+  in the README that the committed `nb_out/` is a readable snapshot of the `nbc` output
+  and is not pinned to a container version: the build regenerates it from the `.niob`
+  sources with the image's `nbc`, so a change under `nb_out/` after a build is expected
+  toolchain drift, and the `.niob` sources are the source of truth.
 - **Run targets, led by the Fog.** A bare `run_test.sh` targets the Niobium Fog;
   `--cpu` and `--sim` are the local validation modes. Give each its command, its
   expected output, and its resource needs (peak server RSS, per-stage wall-clock,
