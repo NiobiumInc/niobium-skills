@@ -179,8 +179,10 @@ worker, and runs your server against it; the server generates the trace, dispatc
 pipeline (copy `ct_result` back, decrypt, compare vs the twin) is identical to the
 `--cpu` / `--sim` path. `--target` defaults to the real Fog (`FOG`), never a
 simulator; `FUNC_SIM` (`FOG_TARGET=FUNC_SIM`) is an explicit hardware-free
-alternative. Leave the ring-dim guard on: it passes at N = 2^16, and it is what
-catches an insecure or hardware-incompatible ring before dispatch. A default mode
+alternative. The Fog runs exactly N = 2^16: keep the ring-dim guard on for every
+Fog dispatch (it is never bypassed there), so a non-2^16 ring cannot reach the Fog.
+The `--no-ring-dim-check` bypass is only for local `--cpu` / `--sim` testing of a
+smaller ring. A default mode
 that, with a key present, prints "launch under `fog submit`" and exits without
 calling it is **incomplete**; this is the single most common way this stage is
 faked. Wire the real dispatch and run it once against a live key (target
@@ -274,8 +276,8 @@ the things that actually bit:
 - **Bootstrap plumbing for the Fog server:** call `EvalBootstrapSetup(...)`
   before recording, and ensure the bootstrap/rotation keys are provisioned to
   the server home and captured by `tag_keys`. (niobium-client's own `bootstrap`
-  example passes `--no-ring-dim-check`, but only because it runs at a small test
-  ring; at N = 2¹⁶ the guard passes, so leave it on.)
+  example passes `--no-ring-dim-check`, but only because it runs locally at a small
+  test ring; a Fog run uses N = 2¹⁶ with the guard on.)
 
 - **Run artifacts are not source.** The key dirs and `*_workload_*/` trace dirs
   regenerate each run — `.gitignore` them; commit only `app/` sources + any

@@ -987,12 +987,13 @@ The key parameters for CKKS (and analogous choices for BFV/BGV):
 
 - **Ring dimension (N).** Determines the number of SIMD slots (N/2 for CKKS,
   N for BFV/BGV) and the achievable security level for a given modulus size.
-  **The backend floor is currently 2^16 (65,536); the hardware does not yet
-  support 2^15.** Smaller N is attractive — fewer slots but smaller ciphertexts
-  and faster ops — and may become supported, so treat this as a deployment
-  constraint, not a permanent rule. **Default to N = 2^16.** Only author 2^15 if
-  the user explicitly approves it for performance; if they don't approve, use
-  2^16 as the floor. Consent does not waive security: N must still be large
+  **The Niobium Fog runs exactly one ring dimension: N = 2^16 (65,536).** Any
+  application that will run on the Fog must use N = 2^16; a ring dimension other
+  than 2^16 cannot run on the Fog, and the run harness never bypasses the
+  ring-dim guard on a Fog run. **Default to N = 2^16 for every application.** A
+  smaller ring (2^15, or a toy 2^10) is useful only for fast local `--cpu` /
+  `--sim` testing and experimentation and must never be dispatched to the Fog.
+  Sizing still has to be secure: N must be large
   enough that the total modulus `logQ` is secure at the target level — compute
   `logQ ≈ first_mod + depth × scaling_mod` (plus the hybrid key-switching special
   modulus, which adds materially) and confirm the chosen N is secure for it. For

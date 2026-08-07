@@ -82,8 +82,10 @@ Provide `-h`/`--help` listing the four modes and the env knobs:
 - `FOG_TARGET` sets the Fog target for the default mode (default `FOG`;
   `FOG_TARGET=FUNC_SIM` selects the hardware-free functional simulator).
 - `RINGCHK` set to `--no-ring-dim-check` bypasses the minimum-ring-dimension
-  security floor. The check passes at N = 2^16, so this is an opt-in for a
-  deliberately small ring, not a default.
+  security floor for **local** `--cpu` / `--sim` runs only, so you can test a
+  deliberately small ring (e.g. 2^15, or a toy 2^10) fast. It is never forwarded
+  to a Fog run: the Fog runs exactly N = 2^16 and its ring-dim guard is always on,
+  so a non-2^16 ring cannot reach the Fog.
 - `NREC` sets how many records to score (a small default for `--sim` and the Fog,
   a larger one for `--cpu`).
 
@@ -176,7 +178,10 @@ for ((i=0; i<NREC; i++)); do
   if [ "$MODE" = "fog" ]; then
     # THE DEFAULT PATH: the server runs under `fog submit`. A default mode that
     # preflights and exits without ever calling `fog submit` is incomplete.
-    fog submit "$BUILD/<app>_server" "$SERVER" $HOLLOW_FLAG $RINGCHK --target="$FOG_TARGET"
+    # The Fog runs exactly N = 2^16. The ring-dim guard stays on for every Fog
+    # dispatch (RINGCHK, the local-testing bypass, is not forwarded here), so a
+    # non-2^16 ring cannot reach the Fog.
+    fog submit "$BUILD/<app>_server" "$SERVER" $HOLLOW_FLAG --target="$FOG_TARGET"
   else
     # --sim passes --hollow (server records hollow, skips its ring-level check);
     # --sim-full omits it (real record, so the server's ring-level check runs).
