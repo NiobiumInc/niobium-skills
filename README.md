@@ -28,13 +28,17 @@ npx skills add NiobiumInc/niobium-skills --skill fhe-application-design
 **Prerequisites (beyond the skill itself):** building and running the encrypted
 application (Stages 8 and 10) uses the **FHE-dev container**, which ships
 Niobium's instrumented OpenFHE fork + `libnbfhetch` (built from
-[niobium-client](https://github.com/NiobiumInc/niobium-client)). You need Docker;
-the skill's Dockerfile builds the image, and the first build compiles OpenFHE
-from source:
+[niobium-client](https://github.com/NiobiumInc/niobium-client)). You need Docker.
+Pull the prebuilt image (recommended), or build it yourself from the skill's
+Dockerfile (the first build compiles OpenFHE from source):
 
 ```bash
-docker build -t ghcr.io/niobiuminc/fhe-dev:v0.13.0 skills/fhe-application-design/environment
-docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.13.0 make test-release   # smoke test
+# Pull the prebuilt image (recommended)
+docker pull ghcr.io/niobiuminc/fhe-dev:latest
+docker run --rm ghcr.io/niobiuminc/fhe-dev:latest make test-release   # smoke test
+
+# Or build it yourself (compiles OpenFHE from source on the first build)
+docker build -t ghcr.io/niobiuminc/fhe-dev:latest skills/fhe-application-design/environment
 ```
 
 The skill walks you through this as its Stage 0, so you can also just start a
