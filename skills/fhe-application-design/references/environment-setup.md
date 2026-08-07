@@ -58,10 +58,10 @@ e.g. `.claude/skills/fhe-application-design/environment`, or
 
 ```bash
 # Pull the prebuilt image from ghcr:
-docker pull ghcr.io/niobiuminc/fhe-dev:v0.13.0
+docker pull ghcr.io/niobiuminc/fhe-dev:latest
 
 # Or build it from the skill's environment/ directory:
-docker build -t ghcr.io/niobiuminc/fhe-dev:v0.13.0 skills/fhe-application-design/environment
+docker build -t ghcr.io/niobiuminc/fhe-dev:latest skills/fhe-application-design/environment
 ```
 
 The first build clones niobium-client and compiles the instrumented OpenFHE +
@@ -75,7 +75,7 @@ Prove the environment can build and run OpenFHE C++ before you invest in a
 design:
 
 ```bash
-docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.13.0 make test-release
+docker run --rm ghcr.io/niobiuminc/fhe-dev:latest make test-release
 ```
 
 It takes the bundled examples through record → simulate → decrypt; a green sweep
@@ -88,7 +88,7 @@ EvalBootstrap silently no-ops on shallow inputs, so naive tests validate
 nothing). Run it before designing any bootstrapped circuit:
 
 ```bash
-docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.13.0 fhe-boot-lab 50 51 24 16384 3 3 1
+docker run --rm ghcr.io/niobiuminc/fhe-dev:latest fhe-boot-lab 50 51 24 16384 3 3 1
 ```
 
 ## How the container is used later (Stages 8 and 10)
@@ -142,7 +142,7 @@ able to run it. The FHE-dev image bundles a CPU PyTorch, so you can produce the
 reference's ground-truth outputs there too:
 
 ```bash
-docker run --rm -v "$PWD":/work -w /work ghcr.io/niobiuminc/fhe-dev:v0.13.0 \
+docker run --rm -v "$PWD":/work -w /work ghcr.io/niobiuminc/fhe-dev:latest \
     python3 run_reference.py
 ```
 

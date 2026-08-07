@@ -160,7 +160,7 @@ alternative. Mint a key once, then deploy through the wrapper (which mounts
 `~/.fog`); the bare `run_test.sh` (no flag) runs the server step under `fog submit`:
 
 ```bash
-docker run --rm -it -v "$HOME/.fog":/root/.fog ghcr.io/niobiuminc/fhe-dev:v0.13.0 fog login
+docker run --rm -it -v "$HOME/.fog":/root/.fog ghcr.io/niobiuminc/fhe-dev:latest fog login
 ./run-in-container.sh "./run_test.sh"
 ```
 

@@ -227,12 +227,12 @@ Three one-time steps:
 1. Install Docker (Docker Desktop on macOS/Windows) if it isn't already present
    — the only unavoidable local install.
 2. Get the FHE-dev image: pull the prebuilt image from the GitHub Container Registry
-   (`docker pull ghcr.io/niobiuminc/fhe-dev:v0.13.0`), or build it from the skill's
-   `environment/` directory (`docker build -t ghcr.io/niobiuminc/fhe-dev:v0.13.0
+   (`docker pull ghcr.io/niobiuminc/fhe-dev:latest`), or build it from the skill's
+   `environment/` directory (`docker build -t ghcr.io/niobiuminc/fhe-dev:latest
    environment`). The first build clones niobium-client and compiles the instrumented
    OpenFHE from source, which is the one heavy step; allow time for it.
 3. Run the smoke test:
-   `docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.13.0 make test-release`. It
+   `docker run --rm ghcr.io/niobiuminc/fhe-dev:latest make test-release`. It
    takes the bundled examples through record, simulate, and decrypt; a green
    sweep means the environment is ready.
 
@@ -1748,7 +1748,7 @@ wrapper mounts `~/.fog` when present, so once you have a key it just works:
 
 ```bash
 # once — mint a key (interactive):
-docker run --rm -it -v "$HOME/.fog":/root/.fog ghcr.io/niobiuminc/fhe-dev:v0.13.0 fog login
+docker run --rm -it -v "$HOME/.fog":/root/.fog ghcr.io/niobiuminc/fhe-dev:latest fog login
 # deploy to the Fog (the default — no flag); the server step runs under `fog submit`:
 ./run-in-container.sh "./run_test.sh"
 ```

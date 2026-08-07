@@ -20,7 +20,7 @@ Runs a command in the FHE-dev image with the project mounted at `/work` (and
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-IMAGE="${FHE_DEV_IMAGE:-ghcr.io/niobiuminc/fhe-dev:v0.13.0}"
+IMAGE="${FHE_DEV_IMAGE:-ghcr.io/niobiuminc/fhe-dev:latest}"   # tracks the current image; for a reproducible app pin a version: FHE_DEV_IMAGE=ghcr.io/niobiuminc/fhe-dev:vX.Y.Z
 FOG=(); [ -d "$HOME/.fog" ] && FOG=(-v "$HOME/.fog:/root/.fog")
 exec docker run --rm -v "$PWD":/work -w /work "${FOG[@]}" "$IMAGE" bash -c "$*"
 ```
