@@ -1667,7 +1667,7 @@ rewrite from scratch here.
    part d "not a lucky run," and the final PASS.)*
 
 3. **A run README** in the application directory. It assumes only Docker on the
-   host and takes a newcomer from nothing to a run and back to a clean tree. Its
+   host and takes a newcomer from a fresh clone to a run and back to a clean tree. Its
    full structure is in `references/run-harness.md` ("Documenting the run in the
    README"): obtaining the FHE-dev image, regenerating inputs, the Fog-led run
    targets with their expected output and resource needs, the two-process/two-host

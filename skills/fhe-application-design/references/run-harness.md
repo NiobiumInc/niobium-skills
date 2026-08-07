@@ -142,7 +142,9 @@ esac
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 BUILD="$ROOT/build"; RUN="$ROOT/run_${MODE}"
 CLIENT="$RUN/client_home"; SERVER="$RUN/server_home"
-rm -rf "$RUN"; mkdir -p "$CLIENT" "$SERVER"
+# Clear the per-run home AND the FHETCH trace cache each run, so --sim-full records
+# real math (for its ring-level identity check) instead of reusing a hollow --sim trace.
+rm -rf "$RUN" "$ROOT"/<app>_server_workload_* "$ROOT"/nbcc_fhetch_replay_source_*; mkdir -p "$CLIENT" "$SERVER"
 
 # 1. keygen writes ALL keys into the client home
 "$BUILD/<app>_keygen" "$CLIENT"
@@ -258,7 +260,7 @@ Build once, then validate locally on CPU, both through the wrapper:
 ## Documenting the run in the README
 
 The application ships a run README that assumes only Docker on the host and takes a
-newcomer from nothing to a run and back to a clean tree. Order it so the usage reads
+newcomer from a fresh clone to a run and back to a clean tree. Order it so the usage reads
 end to end: obtain the image, run, tear down. Beyond whatever the user asked for, it
 always includes:
 
@@ -280,8 +282,10 @@ always includes:
   and is not pinned to a container version: the build regenerates it from the `.niob`
   sources with the image's `nbc`, so a change under `nb_out/` after a build is expected
   toolchain drift, and the `.niob` sources are the source of truth.
-- **Run targets, led by the Fog.** A bare `run_test.sh` targets the Niobium Fog;
-  `--cpu` and `--sim` are the local validation modes. Give each its command, its
+- **Run targets, led by the Fog.** A bare `run_test.sh` targets the Niobium Fog and
+  is the default. List it **first** as the lead run command in the README (both
+  where the run steps are given and in the run-modes table), with `--cpu` and
+  `--sim` following as the local validation modes. Give each its command, its
   expected output, and its resource needs (peak server RSS, per-stage wall-clock,
   boundary sizes).
 - **Client/server deployment.** The two-process run and its two-host variant (copy
