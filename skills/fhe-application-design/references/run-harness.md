@@ -316,12 +316,11 @@ reporting order) and change:
 ## Makefile
 
 A `clean` target that removes everything a build or a run regenerates: the
-`build/` tree, the per-run homes (the `run_cpu/` / `run_sim/` / `run_fog/` dirs and
+`build/` tree, the per-run homes (`run_*/`, including the two-process demo's, plus
 any root `client_home/` / `server_home/`), and the `*_server_workload_*/` FHETCH
-trace directories. **List the run-home directories explicitly; never `rm -rf run_*`**,
-because that glob also matches `run_test.sh` and deletes the orchestrator (the same
-trap catches any generated script whose name a clean glob can hit). Keep these paths
-in sync with what the scripts create and with the `.gitignore` below.
+trace directories. **Match run homes with `run_*/`, never bare `run_*`**: the
+trailing slash matches directories only, so it cannot delete `run_test.sh`. Keep
+these paths in sync with the `.gitignore` below.
 
 ## .gitignore
 
@@ -347,20 +346,20 @@ numbers forward; a run does not write to them.
 /build/
 # Build tree (DSL path: keep the generated nb_out sources, ignore its build/)
 /nb_out/build/
-# Per-run homes provisioned by run_test.sh (keys, ciphertexts)
-/run_cpu/
-/run_sim/
-/run_sim-full/
-/run_fog/
+# Per-run homes provisioned by run_test.sh and the two-process demo (keys, ciphertexts).
+# Directory-only glob: covers every run mode, and cannot match run_test.sh.
+/run_*/
 client_home/
 server_home/
 # Local tooling that must never be committed
 .venv/
 __pycache__/
+# Toolchain replay artifacts
+/nbcc_fhetch_replay_source_*/
+/fhetch_driver_source_*/
 # App-specific: name this application's trace and profile directories
 /<app>_server_workload_*/
 /<app>_profile_*/
-/fhetch_driver_source_*/
 ```
 
 ## Build and validate

@@ -511,6 +511,19 @@ structure already in place:
    accuracy or destroys the model.
 
    **When the workload is ML, ask where the model and labeled data come from.**
+
+   **Do the lookup, and disclose it when you cannot.** Every option below that
+   says "look up" means an actual search of the live web at design time, not
+   recall from training. A plausible-sounding model form invented from priors is
+   the single most common way these applications end up unpublishable: the
+   cryptography is fine and a domain practitioner takes one look at the model and
+   stops reading. If the environment has no network access (an offline or
+   air-gapped session), **do not silently fall back to invention**. Tell the user
+   the check was skipped, and record it in the design narrative ("model form and
+   data distributions chosen without a literature check; no network access at
+   design time"). A reviewer must be able to tell a verified choice from an
+   unverified one. When the lookup *does* happen, cite what it found.
+
    Offer these options in order, most complete starting point first; name the actor
    in each so it is never ambiguous who does what. Synthesizing everything is the
    last resort, not the recommendation. It produces a proof of concept the user
@@ -519,10 +532,27 @@ structure already in place:
      given; confirm the test set carries the labels the metric needs.
    - **You have the data but no model** (you want help with *how* to evaluate): use
      the user's data as ground truth and build the plaintext reference model to it.
-   - **Have the assistant get a real, representative dataset and model:** look up the
-     standard datasets and models for this task and choose primarily by *popularity*
-     (usage, citations, benchmarks), the strongest signal of a sound choice; cite the
-     dataset's URL in the README so the user can vet provenance and licensing.
+   - **Have the assistant get a real, representative dataset and model:** look up
+     the standard datasets and models for this task.
+     - **Rank the model form by what the field treats as authoritative, not by
+       download count.** In many applied domains the standard lives in a
+       regulation, a standards body, or an open-source *measurement* library
+       instead of on a model hub. Search for the governing specification and its
+       reference implementation **before** searching a hub, and prefer them when
+       they exist. A model hub will happily return a dozen research checkpoints
+       with single-digit downloads for a task whose real standard is a published
+       protocol, in which case popularity is measuring hub activity.
+     - **Treat popularity (usage, citations, benchmarks) as the tiebreaker among
+       comparable candidates.** It carries real information where a field's
+       standard *is* a model, and much less where the standard is a procedure.
+     - **Prefer a model form that has an open-source reference implementation**,
+       and record whether one exists either way. A permissively-licensed
+       implementation of the standard turns Stage 7 from "trust my hand-written
+       twin" into "diff against the reference", the strongest validation
+       available, and worth choosing the model form for. Check its licence before
+       depending on it.
+     - Cite the dataset's URL **and the specification's URL** in the README so the
+       user can vet provenance and licensing.
    - **Have the assistant synthesize the data and model** (a proof of concept; swap
      in real data later): look up how data for this task is conventionally generated
      (feature distributions, typical base rates), then generate an *independent*
@@ -530,7 +560,29 @@ structure already in place:
      function with noise and a chosen base rate, never from the model's own
      thresholded output (trivial self-agreement, and the base rate becomes a dial).
      Report the task metrics against those labels plus the base rate, and state
-     plainly in the docs that the data and model are synthetic.
+     plainly in the docs that the data and model are synthetic. Even here, look up
+     the standard model *form* first and synthesize data for **that** form: a
+     synthetic dataset behind a recognised model form is a proof of concept, while
+     a synthetic dataset behind an invented model form is a toy.
+
+     Then run the two checks that synthesis specifically is prone to failing:
+     - **Degeneracy check (assert it, do not eyeball it).** Assert the rank and
+       report the condition number of the feature matrix before fitting. Derived
+       aggregates are the usual culprit: a sum over features already in the model
+       is an *exact* linear combination of them, so it adds no information and
+       leaves the design matrix rank-deficient. The fit still "works" because
+       regularization papers over it, and the aggregate looks meaningful while
+       contributing nothing. This matters doubly under FHE, where such a feature
+       buys real ciphertext operations for zero modelling value. Fail loudly.
+     - **Report the achievable ceiling next to the metric.** Because you defined
+       the latent process, you know how much of the label is predictable at all:
+       score with the latent probability itself, or fit an oracle model on the
+       true generative parameters that the observable features only proxy. An
+       accuracy or AUC reported without its ceiling is uninterpretable: "AUC
+       0.80" is a weak result against a ceiling of 0.95 and a perfect one against
+       a ceiling of 0.80. Report both, and say which. If the model already sits at
+       the ceiling, say that too: it means richer features cannot help and the
+       remaining error is noise you chose.
 
    **Pick the metric to match the task.** For rare-class workloads (fraud,
    intrusion, anomaly detection) raw accuracy and even decision-agreement are
@@ -1338,6 +1390,19 @@ the twin carries this much weight:
   here, before the expensive build — catch a bad parameter choice against the
   twin, not against a multi-hour encrypted run.
 
+**If the model form has an open-source reference implementation, use it as the
+twin's oracle.** The twin's weakest link is that you wrote both it *and* the
+reference, so "twin agrees with reference" can only catch transcription slips,
+not a shared misreading of the model. When Stage 3's lookup found a
+permissively-licensed implementation of the standard, run it on the same inputs
+and diff the *reference* against it before comparing the twin. That converts an
+internal consistency check into an external one, and it is the difference between
+"our twin matches our reference" and "our pipeline reproduces the reference
+implementation of the published method." Record the version or commit you
+diffed against, and report the agreement in the results report alongside the
+twin-vs-reference row. If no implementation exists, say so explicitly rather
+than leaving the reader to assume one was checked.
+
 Build and validate it:
 
 1. **Complete the twin** at the frozen parameters and confirm it is
@@ -1404,7 +1469,10 @@ only the *measured* encryption results are not. Author now:
   for decode headroom, a twin-fidelity fix, and so on).
 - **The results report — skeleton plus the two plaintext ledger rows.** Write
   *reference → ground truth* (task quality) and *twin → reference* (polynomial
-  cost) now — both are plaintext facts. Fill the parameter table and the Stage 6
+  cost) now, both being plaintext facts. The task-quality row must carry the
+  **achievable ceiling and the majority-class baseline** beside the metric, not
+  the metric alone (Stage 3), plus the agreement against the reference
+  implementation if one exists (Stage 7). Fill the parameter table and the Stage 6
   *size estimates*. Draft the "How we know it passes" narrative except the
   encrypted-layer numbers. Leave the *FHE → twin* row, the measured resource
   profile, and the final PASS as clearly-marked blanks.
@@ -1487,8 +1555,8 @@ Fog as the default target, the `FOG_TARGET` / `RINGCHK` / `NREC` knobs, the buil
 command, and the `clean` target. Read it before authoring the harness; three of its
 directives are non-negotiable (the default run dispatches the server under `fog
 submit`, never a preflight-only stub; `run_test` leads its output with the
-application's own quality metrics; and `clean` lists its run directories explicitly,
-never `rm -rf run_*`).
+application's own quality metrics; and `clean` matches run homes with `run_*/`,
+never bare `run_*`, which would delete `run_test.sh`).
 
 Build once, then validate locally on CPU with `./run_test.sh --cpu` before moving
 on.
