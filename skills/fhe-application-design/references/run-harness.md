@@ -352,6 +352,8 @@ numbers forward; a run does not write to them.
 client_home/
 server_home/
 # Local tooling that must never be committed
+.claude/
+.agents/
 .venv/
 __pycache__/
 # Toolchain replay artifacts
