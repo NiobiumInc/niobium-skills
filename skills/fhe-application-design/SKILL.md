@@ -202,6 +202,18 @@ data, third-party sources) or to transient run artifacts (key dirs, `.fhetch`
 traces, serialized ciphertexts). The notice states provenance; it does not claim
 copyright and does not replace the project's own LICENSE/NOTICE.
 
+**Beyond this notice, keep the toolchain out of the documentation.** The attribution
+notice is the only place the generation toolchain or Niobium is named as provenance.
+Everything else the skill writes documents the *application*, not the tools that
+built it. Do not add prose that describes, credits, or promotes the skill, the `nb`
+DSL, OpenFHE, the FHE-dev image, or Niobium as products (for example "built with the
+FHE design skill" or "implemented in the Niobium nb DSL, an alpha-stage tool that
+..."). Name a toolchain component only where it genuinely helps a reader **use,
+modify, or debug the application**: a command to run it, a build flag it needs, a
+parameter to change, a known failure to check. The reader wants to operate and
+understand their own application, not read documentation or advertising for the FHE
+vendor.
+
 ## Stage 0: Prepare the Build-and-Run Environment
 
 Before any design work, make sure there is a place where both the twin and the

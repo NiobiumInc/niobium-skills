@@ -396,8 +396,10 @@ NC="${NIOBIUM_CLIENT_DIR:-/opt/niobium-client}"
 The application ships a run README that takes a newcomer from a fresh clone to a
 run and back to a clean tree. It assumes the FHE-dev image (Docker on the host)
 by default, or a local niobium-client build when the app was set up that way. Order it so the usage reads
-end to end: obtain the image, run, tear down. Beyond whatever the user asked for, it
-always includes:
+end to end: obtain the image, run, tear down. Keep it about the application, not the
+toolchain: per the attribution rule in SKILL.md, name the image, the `nb` DSL,
+OpenFHE, or the Fog only where it helps a reader run, modify, or debug the app, not
+as description or promotion. Beyond whatever the user asked for, it always includes:
 
 - **Obtain the build-and-run environment.** Either the FHE-dev image (pull the
   published image, or build it from `environment/`), or a local niobium-client
