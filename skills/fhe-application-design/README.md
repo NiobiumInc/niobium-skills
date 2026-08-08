@@ -132,7 +132,9 @@ The `evals/` directory contains five scenarios (credit scoring, credential searc
 
 ## Version History
 
-**v0.13.0 (current)** — Extends the methodology to eleven stages (Stages 0–10), carrying a design through implementation to a Niobium Fog deployment. The eval suite is now five scenarios (`evals/evals.json`), each pairing a prompt with an `expected_output` narrative.
+**v0.14.0 (current)** — Stage 0 gains a second way to provision the build-and-run environment: a local niobium-client source build on the host, alongside the FHE-dev image. One mode-aware run harness (keyed on `NIOBIUM_CLIENT_DIR`) drives both, so the build and run commands are identical whether the SDK comes from the image or a local checkout. The FHE-dev image is published for both `linux/amd64` and `linux/arm64`, so Apple Silicon hosts run it natively.
+
+**v0.13.0** — Extends the methodology to eleven stages (Stages 0–10), carrying a design through implementation to a Niobium Fog deployment. The eval suite is now five scenarios (`evals/evals.json`), each pairing a prompt with an `expected_output` narrative.
 
 Changes across iterations:
 
