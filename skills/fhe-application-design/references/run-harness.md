@@ -14,21 +14,49 @@ Contents:
 
 ## run-in-container.sh
 
-Runs a command in the FHE-dev image with the project mounted at `/work` (and
-`~/.fog` when present, so the Fog mode sees the API key):
+Runs a command against the FHE build-and-run environment. There are two
+provisioning modes behind one interface, so the same call site works either way:
+
+- **Container mode (default).** The command runs inside the FHE-dev image with
+  the project mounted at `/work` (and `~/.fog` when present, so the Fog path sees
+  the API key). Nothing but Docker is needed on the host.
+- **Local mode.** Set `NIOBIUM_CLIENT_DIR` to a built niobium-client checkout on
+  the host and the command runs directly on the host instead of in a container.
+  The toolchain, the `fog` CLI, and the `nbc` compiler come from that build, so no
+  Docker is involved. See `references/environment-setup.md` Path B for how to
+  produce that checkout.
 
 ```bash
 #!/usr/bin/env bash
+# One interface, two provisioning modes. NIOBIUM_CLIENT_DIR set -> run on the
+# host against a local niobium-client build; unset -> run inside the FHE-dev image.
 set -euo pipefail
+if [ -n "${NIOBIUM_CLIENT_DIR:-}" ]; then
+    exec bash -c "$*"                                          # local: run in place on the host (inherits the shell env)
+fi
 IMAGE="${FHE_DEV_IMAGE:-ghcr.io/niobiuminc/fhe-dev:latest}"   # tracks the current image; for a reproducible app pin a version: FHE_DEV_IMAGE=ghcr.io/niobiuminc/fhe-dev:vX.Y.Z
 FOG=(); [ -d "$HOME/.fog" ] && FOG=(-v "$HOME/.fog:/root/.fog")
-exec docker run --rm -v "$PWD":/work -w /work "${FOG[@]}" "$IMAGE" bash -c "$*"
+# Forward the run knobs from the host env so `RING_DIM=… ./run-in-container.sh "…"`
+# behaves the same in the container as it does in local mode (docker does not
+# inherit the caller's environment). Only knobs actually set are passed.
+ENVFWD=(); for v in RING_DIM RINGCHK NREC N_ENC FOG_TARGET; do [ -n "${!v:-}" ] && ENVFWD+=(-e "$v"); done
+exec docker run --rm -v "$PWD":/work -w /work "${FOG[@]}" "${ENVFWD[@]}" "$IMAGE" bash -c "$*"
 ```
+
+In local mode the app runs in place, so the `fog` CLI and `nbc` must already be on
+`PATH` (Path B installs `fog` to `~/.local/bin` and invokes `nbc` from the
+checkout). In container mode they ship in the image. Host env knobs
+(`RING_DIM`/`RINGCHK`/`NREC`/`N_ENC`/`FOG_TARGET`) reach the program in both modes:
+local mode inherits the shell env, and container mode forwards them with `-e` (an
+app-specific knob not in that list must be set inside the quoted command,
+`./run-in-container.sh "FOO=bar ./run_test.sh"`). Neither mode changes the commands
+below.
 
 Give it a `--help` (and bare no-arg) path that prints the common invocations:
 `./run_test.sh`, `./run_test.sh --cpu`, `./run_test.sh --sim`, `./run_test.sh
---help`, plus the build command, so a user finds the modes without opening the
-file.
+--help`, plus the build command, and names which provisioning mode is active
+(container by default, local when `NIOBIUM_CLIENT_DIR` is set), so a user finds
+the modes without opening the file.
 
 ## run_test.sh
 
@@ -92,9 +120,13 @@ Provide `-h`/`--help` listing the four modes and the env knobs:
 Generate `run_test.sh` from the skeleton below. Keep the unbracketed lines as
 they are, in particular the mode parsing, the home provisioning, the negative
 test, the key preflight, and the `fog submit` dispatch; fill the `<...>`
-placeholders and the three report blocks for the application. Adapt step 5 to the
-packing mode (per-record shown; a batched design encrypts once and runs the
-server once).
+placeholders and the three report blocks for the application. Step 5 below is
+written for **per-record** packing (the `for` loop over `NREC`). A **batched**
+design (column-major, records across slots, which the single-encryptor case in
+SKILL.md recommends) is not a small tweak here: replace the whole loop with one
+`encrypt` and one server run over the batch, and read `NREC` as the number of
+records packed into the batch rather than an iteration count. Keep everything else
+(home provisioning, negative test, key preflight, dispatch) as is.
 
 ```bash
 #!/usr/bin/env bash
@@ -142,7 +174,9 @@ case "$MODE" in                   # trace modes are heavier per record than plai
 esac
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-BUILD="$ROOT/build"; RUN="$ROOT/run_${MODE}"
+# --sim and --sim-full get separate run dirs so the sim-vs-sim-full cross-check
+# compares two independent runs instead of clobbering one (both set MODE=sim).
+BUILD="$ROOT/build"; RUN="$ROOT/run_${MODE}"; [ "$SIMFULL" = 1 ] && RUN="$ROOT/run_sim-full"
 CLIENT="$RUN/client_home"; SERVER="$RUN/server_home"
 # Clear the per-run home AND the FHETCH trace cache each run, so --sim-full records
 # real math (for its ring-level identity check) instead of reusing a hollow --sim trace.
@@ -186,6 +220,9 @@ for ((i=0; i<NREC; i++)); do
     # --sim passes --hollow (server records hollow, skips its ring-level check);
     # --sim-full omits it (real record, so the server's ring-level check runs).
     "$BUILD/<app>_server" "$SERVER" $FLAG $HOLLOW_FLAG $RINGCHK   # wrap to capture wall-clock + peak RSS
+    # Peak-RSS wrap differs by OS: Linux `/usr/bin/time -v` reports "Maximum
+    # resident set size" in KB; macOS `/usr/bin/time -l` reports "maximum
+    # resident set size" in bytes. Local Path B runs on either, so parse both.
   fi
   cp "$SERVER/ct_result.bin" "$CLIENT/ct_result_$i.bin"
   "$BUILD/<app>_decrypt" "$CLIENT" "$CLIENT/ct_result_$i.bin" >> "$RUN/decrypted.csv"
@@ -253,24 +290,33 @@ __pycache__/
 
 ## Build and validate
 
-Build once, then validate locally on CPU, both through the wrapper:
+Build once, then validate locally on CPU, both through the wrapper. The prefix
+path points at the built niobium-client: `/opt/niobium-client` inside the image,
+or the local checkout in `NIOBIUM_CLIENT_DIR`. One expression covers both because
+the variable defaults to the in-image path, and the layout under it
+(`vendor/lib/niobium-client`, `vendor/lib/openfhe`) is identical either way:
 
 ```bash
+NC="${NIOBIUM_CLIENT_DIR:-/opt/niobium-client}"
 ./run-in-container.sh "cmake -S . -B build \
-    -DCMAKE_PREFIX_PATH='/opt/niobium-client/vendor/lib/niobium-client;/opt/niobium-client/vendor/lib/openfhe' \
+    -DCMAKE_PREFIX_PATH='$NC/vendor/lib/niobium-client;$NC/vendor/lib/openfhe' \
     && cmake --build build -j"
 ./run-in-container.sh "./run_test.sh --cpu"
 ```
 
 ## Documenting the run in the README
 
-The application ships a run README that assumes only Docker on the host and takes a
-newcomer from a fresh clone to a run and back to a clean tree. Order it so the usage reads
+The application ships a run README that takes a newcomer from a fresh clone to a
+run and back to a clean tree. It assumes the FHE-dev image (Docker on the host)
+by default, or a local niobium-client build when the app was set up that way. Order it so the usage reads
 end to end: obtain the image, run, tear down. Beyond whatever the user asked for, it
 always includes:
 
-- **Obtain the FHE-dev image.** Pull the published image, or build it from
-  `environment/`.
+- **Obtain the build-and-run environment.** Either the FHE-dev image (pull the
+  published image, or build it from `environment/`), or a local niobium-client
+  build on the host (`references/environment-setup.md` Path B), whichever the app
+  was set up with. When the app is built locally, say so and record the
+  `NIOBIUM_CLIENT_DIR` the run expects.
 - **Inputs and outputs.** Enumerate and describe the data the application consumes
   and produces, as a table the reader can map to the code: each input feature (name,
   meaning, unit, and expected range or the bounds the client enforces) and each

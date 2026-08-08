@@ -4,10 +4,12 @@ This reference is the detail behind **Stage 0**. It sets up one thing, once, so
 you are never ambushed mid-design by a missing toolchain: a place where the
 **faithful twin** and the **FHE program** can both be built and run.
 
-The good news is that almost nothing has to be installed locally. Building
-OpenFHE from source is the painful part of FHE development, and you skip doing it
-by hand — the FHE-dev image does it for you, built once from the skill's
-Dockerfile.
+Building OpenFHE from source is the painful part of FHE development. You get past
+it one of two ways: pull the prebuilt FHE-dev image (nothing to compile, Docker is
+the only local install), or build niobium-client from source once on the host (no
+Docker, but a C++ toolchain). Either one gives you the same instrumented OpenFHE
+and `libnbfhetch` to build and run against. This reference calls them **Path A**
+(the image) and **Path B** (a local build).
 
 ## The mental model: two tiers, one data bus
 
@@ -20,16 +22,18 @@ Claude runs these in its own environment as you converse. You do **not** need
 the container, or anything installed locally, for any of it. This is the bulk of
 the work and all of the learning.
 
-**FHE tier (Stages 8 and 10) — runs in the container, on your machine.** Building
-and running the encrypted four-program OpenFHE app needs a full C++ + OpenFHE
-toolchain, which is too heavy for Claude's sandbox. That is what the **FHE-dev
-container** is for. It is the *only* place the container is required.
+**FHE tier (Stages 8 and 10) — runs against the build environment, on your
+machine.** Building and running the encrypted four-program OpenFHE app needs a
+full C++ + OpenFHE toolchain, which is too heavy for Claude's sandbox. That is
+the one tier that needs more than Python, and you provision it once, either as
+the FHE-dev container (Path A) or a local niobium-client build (Path B).
 
-**The data bus is your project folder.** Claude writes source files into your
-mounted project folder; the container is run with that same folder bind-mounted,
-so it compiles that source and writes its outputs (decrypted results, logs)
-right back into the folder, where Claude reads them. Files never have to be
-copied by hand.
+**The data bus is your project folder.** In Path A, Claude writes source files
+into your project folder; the container is run with that same folder
+bind-mounted, so it compiles that source and writes its outputs (decrypted
+results, logs) right back into the folder, where Claude reads them. Files never
+have to be copied by hand. In Path B there is no mount: the app builds and runs
+in place in the project folder, which already lives on the host.
 
 One correction to a natural assumption: the container does **not** run Claude or
 any agent. It is a dumb build box. Claude is the brain and lives outside it; the
@@ -37,11 +41,25 @@ container only compiles and runs the code Claude writes.
 
 ## One-time setup
 
+You provision the build environment once, up front, one of two ways. Do this
+before Stage 1 and treat the smoke test as the gate.
+
+- **Path A — the FHE-dev image (recommended).** Needs only Docker.
+- **Path B — a local niobium-client build.** Needs a C++ toolchain, no Docker.
+
+Both give the same instrumented OpenFHE and `libnbfhetch`, and everything
+downstream (the run harness, the run modes, the later commands) is identical. If
+the skill is installed under a niobium-client clone (its path contains
+`niobium-client/.claude/skills/` or `niobium-client/.agents/skills/`), default to
+Path B against that checkout and confirm with the user; otherwise use Path A.
+
+## Path A: FHE-dev image
+
 ### 1. Install Docker (only if you don't have it)
 
 Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) (macOS
-or Windows) or Docker Engine (Linux) and make sure it is running. This is the
-single local install you cannot avoid.
+or Windows) or Docker Engine (Linux) and make sure it is running. On this path
+Docker is the only local install.
 
 Verify:
 
@@ -52,9 +70,11 @@ docker --version
 ### 2. Get the FHE-dev image
 
 Pull the prebuilt image from the GitHub Container Registry, or build it from the
-skill's `environment/` directory (the path depends on where the skill is installed,
-e.g. `.claude/skills/fhe-application-design/environment`, or
-`skills/fhe-application-design/environment` from a clone of the skill repo):
+skill's `environment/` directory. That path depends on where the skill is
+installed: `.claude/skills/fhe-application-design/environment` (Claude),
+`.agents/skills/fhe-application-design/environment` (Codex and other
+agentskills.io agents), or `skills/fhe-application-design/environment` from a clone
+of the skill repo.
 
 ```bash
 # Pull the prebuilt image from ghcr:
@@ -91,7 +111,129 @@ nothing). Run it before designing any bootstrapped circuit:
 docker run --rm ghcr.io/niobiuminc/fhe-dev:latest fhe-boot-lab 50 51 24 16384 3 3 1
 ```
 
-## How the container is used later (Stages 8 and 10)
+## Path B: local niobium-client build
+
+Build niobium-client from source once on the host, then point the skill at the
+checkout. No Docker; a C++ toolchain does the work instead.
+
+### 1. Install build prerequisites
+
+A C++17 compiler, CMake 3.16+, OpenSSL 3, and Python 3.
+
+macOS (Apple ships LibreSSL, so point CMake at Homebrew's OpenSSL):
+
+```bash
+xcode-select --install
+brew install cmake openssl@3 python3
+export OPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
+```
+
+Linux (Debian / Ubuntu):
+
+```bash
+sudo apt-get update && sudo apt-get install -y build-essential cmake libssl-dev python3 git
+```
+
+### 2. Get niobium-client and build it
+
+Acquire the client, then build it. Three ways to acquire it:
+
+- **Already have a checkout** (you are working inside one, or the starter kit
+  vendors it as a submodule): use it as is and skip to the build. For the OpenFHE
+  path, confirm it was installed with `make install-release` (its
+  `vendor/lib/niobium-client/lib/cmake/NiobiumFhetch/` holds
+  `NiobiumFhetchConfig.cmake`); if only `NiobiumFhetchTargets.cmake` is there, run
+  `make install-release` in it.
+- **A submodule of your project (default).** When the skill is installed in a git
+  repo, add the client as a submodule so its version travels with the app, and
+  commit the gitlink and `.gitmodules` so the pin is recorded (an uncommitted pin
+  does not survive a fresh clone, and some build scripts reset it):
+  ```bash
+  git submodule add https://github.com/NiobiumInc/niobium-client.git niobium-client
+  git add .gitmodules niobium-client && git commit -m "Vendor niobium-client"
+  cd niobium-client
+  ```
+- **A shared standalone clone.** To build the heavy client once and reuse it across
+  several apps (or when the project is not a git repo), clone it somewhere central
+  instead: `git clone https://github.com/NiobiumInc/niobium-client.git && cd niobium-client`.
+
+Then build and put the `fog` CLI on PATH. Fetch only the niobium-fhetch submodule
+and its nested OpenFHE, skipping the GPU-oriented niobium-haze exactly as the image
+does:
+
+```bash
+make sync-fhetch     # niobium-fhetch + nested OpenFHE only (no niobium-haze)
+make release         # build the instrumented OpenFHE + libnbfhetch (Release)
+make install-release # install them + NiobiumFhetchConfig.cmake under vendor/lib/ (find_package needs this)
+make install-cli     # install fog + nbcc_fhetch_replay to ~/.local/bin
+```
+
+The install is checkout-relative and the same on macOS and Linux. `make release`
+builds the instrumented OpenFHE and `libnbfhetch`; **`make install-release`
+installs them** under `<checkout>/vendor/lib/openfhe` and
+`<checkout>/vendor/lib/niobium-client`, including `NiobiumFhetchConfig.cmake` so the
+app's `find_package(NiobiumFhetch)` resolves. Skipping it leaves only
+`vendor/lib/openfhe`, and the build cannot find the SDK. `make install-cli` puts
+`fog` and `nbcc_fhetch_replay` in `~/.local/bin` (override with `CLI_PREFIX=`).
+Build the app against this same OpenFHE only: mixing another
+OpenFHE (system or Homebrew) with the client's `libnbfhetch` fails at link with
+`undefined reference to lbcrypto::...`. The generated build points there already
+(the `CMAKE_PREFIX_PATH` in `run-harness.md`). Put the bin directory on PATH
+(`~/.zshrc` on macOS, `~/.bashrc` on Linux):
+
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && exec $SHELL
+```
+
+### 3. Point the skill at the checkout
+
+Export `NIOBIUM_CLIENT_DIR` to the checkout's absolute path. The generated
+`run-in-container.sh` reads it and runs the build and every run mode directly on
+the host instead of in a container, and the build's `CMAKE_PREFIX_PATH` resolves
+against it:
+
+```bash
+export NIOBIUM_CLIENT_DIR="$PWD"     # run from inside the checkout
+```
+
+The DSL compiler needs no install: `nbc` runs in place from
+`$NIOBIUM_CLIENT_DIR/dsl_fhe/xcomp/nbc.py`.
+
+### 4. Run the smoke test
+
+Prove the toolchain can build and run OpenFHE C++ before you invest in a design.
+Run it natively from inside the checkout:
+
+```bash
+make test-release
+```
+
+It takes the bundled examples through record, simulate, and decrypt; a green
+sweep means Stage 0 is complete and you can start Stage 1.
+
+**Bootstrap lab (Stage 6), only if your design bootstraps.** `make release` does
+not build `fhe-boot-lab`. Compile it once against the local install from the
+skill's `environment/boot_lab.cpp` (the same source the image bakes in):
+
+```bash
+NC="$NIOBIUM_CLIENT_DIR"
+# boot_lab.cpp ships in the installed skill's environment/ directory. Set SKILL_ENV
+# to <skill>/environment, where <skill> is .claude/skills/fhe-application-design
+# (Claude), .agents/skills/fhe-application-design (Codex and other agentskills.io
+# agents), or skills/fhe-application-design from a clone of the skill repo.
+SKILL_ENV="<skill>/environment"
+g++ -O2 -std=c++17 "$SKILL_ENV/boot_lab.cpp" -o ~/.local/bin/fhe-boot-lab \
+    -I"$NC/vendor/lib/openfhe/include/openfhe" \
+    -I"$NC/vendor/lib/openfhe/include/openfhe/core" \
+    -I"$NC/vendor/lib/openfhe/include/openfhe/pke" \
+    -I"$NC/vendor/lib/openfhe/include/openfhe/binfhe" \
+    -I"$NC/vendor/lib/openfhe/include/openfhe/third-party/include" \
+    -L"$NC/vendor/lib/openfhe/lib" -lOPENFHEpke -lOPENFHEcore -lOPENFHEbinfhe \
+    -L"$NC/vendor/lib/niobium-client/lib" -lnbfhetch \
+    -Wl,-rpath,"$NC/vendor/lib/openfhe/lib" -Wl,-rpath,"$NC/vendor/lib/niobium-client/lib"
+```
+
+## How the build environment is used later (Stages 8 and 10)
 
 You do not need to memorize any of this — at Stage 8 Claude writes the source
 into your project folder along with a `run-in-container.sh` wrapper and a
@@ -102,11 +244,13 @@ into your project folder along with a `run-in-container.sh` wrapper and a
 ./run-in-container.sh "./run_test.sh"          # no flag -> the Fog; --sim / --cpu validate locally
 ```
 
-The wrapper mounts your project folder into the container at `/work` (and
-`~/.fog` when present), so the build sees Claude's source and its outputs land
-back in your folder. Claude then reads those outputs and iterates. Because the
-twin was already validated in Stage 7, this loop should converge in only a few
-iterations.
+In Path A the wrapper mounts your project folder into the container at `/work`
+(and `~/.fog` when present), so the build sees Claude's source and its outputs
+land back in your folder. In Path B the same wrapper runs the same commands in
+place on the host (it reads `NIOBIUM_CLIENT_DIR` and skips the container), so the
+call sites above do not change. Claude then reads those outputs and iterates.
+Because the twin was already validated in Stage 7, this loop should converge in
+only a few iterations.
 
 ## Execution mode: self-run vs hand-off (probe, don't assume)
 
@@ -146,7 +290,13 @@ docker run --rm -v "$PWD":/work -w /work ghcr.io/niobiuminc/fhe-dev:latest \
     python3 run_reference.py
 ```
 
+In Path B run it with the host's Python (`python3 run_reference.py`), installing
+`torch` there if it is missing, since the local build does not carry a Python ML
+stack.
+
 ## Troubleshooting
+
+Path A (image):
 
 - **`docker: command not found`** — Docker isn't installed or not on PATH; see
   step 1.
@@ -159,6 +309,26 @@ docker run --rm -v "$PWD":/work -w /work ghcr.io/niobiuminc/fhe-dev:latest \
   owned by you.
 - **The first build is large / slow** — expected (it compiles OpenFHE + carries a
   Python ML stack). It is a one-time cost; subsequent runs are instant.
+- **Apple Silicon: `WARNING: ... platform (linux/amd64) does not match ... arm64`
+  and slow runs** — the published image is `linux/amd64` only, so it runs under
+  emulation on arm64 Macs (a large runtime penalty; the encrypted server can be
+  several times slower). It is correct, just slow. For native speed on Apple
+  Silicon use Path B (a local build compiles for arm64), until the image ships a
+  multi-arch (`arm64`) variant.
+
+Path B (local build):
+
+- **macOS `make release` fails at `find_package(OpenSSL)`, or no "TLS enabled"
+  line** — Apple ships LibreSSL; `brew install openssl@3` and
+  `export OPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"`, then rebuild. Without
+  TLS the build finishes but `fog submit` cannot reach the Niobium Fog.
+- **`fog: command not found`** — `~/.local/bin` is not on PATH; add it (step 2)
+  or re-run `make install-cli` with a `CLI_PREFIX=` that is.
+- **`run-in-container.sh` still uses Docker** — `NIOBIUM_CLIENT_DIR` is not
+  exported in the shell running it; export it to the checkout's absolute path.
+- **The app build cannot find NiobiumFhetch or OpenFHE** — `make release` has not
+  installed under `<checkout>/vendor/lib/`, or `NIOBIUM_CLIENT_DIR` points at the
+  wrong directory; confirm both, then rebuild.
 
 ## For maintainers: building and publishing the image
 

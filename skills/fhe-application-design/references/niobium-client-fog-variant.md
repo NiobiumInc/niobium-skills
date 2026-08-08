@@ -141,12 +141,14 @@ the record bracket must be captured. The library captures its own internal
 operands *you* build must be `tag_input`'d before `start()` (the same rule the `--sim`
 caveats below state).
 
-## Build and run (in the FHE-dev container)
+## Build and run
 
-The app builds against the SDK in the FHE-dev image via `find_package(NiobiumFhetch)`
-and runs through the generated `run-in-container.sh` wrapper and `run_test.sh`. See
+The app builds against the SDK via `find_package(NiobiumFhetch)` and runs through
+the generated `run-in-container.sh` wrapper and `run_test.sh`, whether the SDK
+comes from the FHE-dev image or a local niobium-client build (see
+[environment-setup.md](environment-setup.md) for the two provisioning paths). See
 [run-harness.md](run-harness.md) for the scripts, the build command, the three run
-modes, and the `RINGCHK` / `FOG_TARGET` / `NREC` knobs. The image is one coherent
+modes, and the `RINGCHK` / `FOG_TARGET` / `NREC` knobs. The SDK is one coherent
 build, so the instrumented OpenFHE and `libnbfhetch` versions always match. Before
 deploying to the Fog, run the required local validation,
 `./run-in-container.sh "./run_test.sh --sim"`, which generates the trace, runs it
@@ -156,8 +158,9 @@ through `fhetch_sim`, and compares the result against the twin.
 the Niobium Fog and needs an API key; the server preflights for one
 (`~/.fog/credentials` via `fog login`, or `FOG_API_TOKEN`) and prints a friendly
 sign-in / sign-up pointer if it is missing, with `--sim` as the account-free
-alternative. Mint a key once, then deploy through the wrapper (which mounts
-`~/.fog`); the bare `run_test.sh` (no flag) runs the server step under `fog submit`:
+alternative. Mint a key once, then deploy through the wrapper (in the image path
+it mounts `~/.fog`; in the local path `fog` is on `PATH` and reads `~/.fog`
+directly); the bare `run_test.sh` (no flag) runs the server step under `fog submit`:
 
 ```bash
 docker run --rm -it -v "$HOME/.fog":/root/.fog ghcr.io/niobiuminc/fhe-dev:latest fog login

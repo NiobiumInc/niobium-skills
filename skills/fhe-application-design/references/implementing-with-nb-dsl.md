@@ -127,22 +127,31 @@ follows; produce all of them.
 
 3. **Compile and build in your project directory.** From your project
    directory, run the cross-compiler against your `.niob` files, emitting the
-   generated C++ into your project (in the FHE-dev image the niobium-client
-   checkout is at `/opt/niobium-client`):
+   generated C++ into your project (`<niobium-client>` is `/opt/niobium-client`
+   in the FHE-dev image, or `$NIOBIUM_CLIENT_DIR` for a local build). `nbc` runs
+   as a module on `PYTHONPATH`, not as a script path (its package-relative
+   imports make `python3 .../nbc.py` fail with `ImportError`):
    ```
-   python3 <niobium-client>/dsl_fhe/xcomp/nbc.py compile \
+   PYTHONPATH=<niobium-client>/dsl_fhe python3 -m xcomp.nbc compile \
        shared.niob client.niob server.niob --outdir nb_out
    ```
-   The generated `nb_out/` is a self-contained CMake project: build it with
-   `cmake -S nb_out -B nb_out/build && cmake --build nb_out/build`, then run
-   the stage binaries in order and verify against the plaintext reference. (To contribute the app as a niobium-client example
-   instead, add it under `dsl_fhe/examples/<name>/` with `make <name>` /
-   `test-<name>` targets per `HOWTO.md`.)
+   The generated `nb_out/` is a self-contained CMake project. Build it with an
+   explicit client root, since `nb_out/` discovers the SDK by walking its parent
+   directories and that fails when `nb_out/` is a sibling of the checkout (the
+   submodule layout) rather than a descendant:
+   ```
+   cmake -S nb_out -B nb_out/build -DNIOBIUM_CLIENT_ROOT=<niobium-client> \
+       && cmake --build nb_out/build -j
+   ```
+   Then run the stage binaries in order and verify against the plaintext
+   reference. (To contribute the app as a niobium-client example instead, add it
+   under `dsl_fhe/examples/<name>/` with `make <name>` / `test-<name>` targets per
+   `HOWTO.md`.)
 
-4. **Iterate with the compiler's feedback**: run `nbc.py check shared.niob
-   client.niob server.niob` from your project directory for parse/semantic
-   checks; aim for `0 warnings, 0 errors`, then confirm numerics with the
-   end-to-end run above.
+4. **Iterate with the compiler's feedback**: run `PYTHONPATH=<niobium-client>/dsl_fhe
+   python3 -m xcomp.nbc check shared.niob client.niob server.niob` from your
+   project directory for parse/semantic checks; aim for `0 warnings, 0 errors`,
+   then confirm numerics with the end-to-end run above.
 
 5. **ML workloads: ground truth first, then sweep.** Require a full plaintext
    model implementation and a representative test set (Stage 3 — firm, not
