@@ -39,7 +39,7 @@ FOG=(); [ -d "$HOME/.fog" ] && FOG=(-v "$HOME/.fog:/root/.fog")
 # Forward the run knobs from the host env so `RING_DIM=… ./run-in-container.sh "…"`
 # behaves the same in the container as it does in local mode (docker does not
 # inherit the caller's environment). Only knobs actually set are passed.
-ENVFWD=(); for v in RING_DIM RINGCHK NREC N_ENC FOG_TARGET; do [ -n "${!v:-}" ] && ENVFWD+=(-e "$v"); done
+ENVFWD=(); for v in RING_DIM RINGCHK RECORD NREC N_ENC FOG_TARGET; do [ -n "${!v:-}" ] && ENVFWD+=(-e "$v"); done
 # ${arr[@]+"${arr[@]}"} guards empty-array expansion under `set -u` on bash 3.2
 # (macOS default), which otherwise aborts with "unbound variable".
 exec docker run --rm -v "$PWD":/work -w /work ${FOG[@]+"${FOG[@]}"} ${ENVFWD[@]+"${ENVFWD[@]}"} "$IMAGE" bash -c "$*"
@@ -48,7 +48,7 @@ exec docker run --rm -v "$PWD":/work -w /work ${FOG[@]+"${FOG[@]}"} ${ENVFWD[@]+
 In local mode the app runs in place, so the `fog` CLI and `nbc` must already be on
 `PATH` (Path B installs `fog` to `~/.local/bin` and invokes `nbc` from the
 checkout). In container mode they ship in the image. Host env knobs
-(`RING_DIM`/`RINGCHK`/`NREC`/`N_ENC`/`FOG_TARGET`) reach the program in both modes:
+(`RING_DIM`/`RINGCHK`/`RECORD`/`NREC`/`N_ENC`/`FOG_TARGET`) reach the program in both modes:
 local mode inherits the shell env, and container mode forwards them with `-e` (an
 app-specific knob not in that list must be set inside the quoted command,
 `./run-in-container.sh "FOO=bar ./run_test.sh"`). Neither mode changes the commands
@@ -116,8 +116,24 @@ Provide `-h`/`--help` listing the four modes and the env knobs:
   deliberately small ring (e.g. 2^15, or a toy 2^10) fast. It is never forwarded
   to a Fog run: the Fog runs exactly N = 2^16 and its ring-dim guard is always on,
   so a non-2^16 ring cannot reach the Fog.
-- `NREC` sets how many records to score (a small default for `--sim` and the Fog,
-  a larger one for `--cpu`).
+- `NREC` sets how many records to score. **Default it to the deployment's unit of
+  work, not to the sample size the fidelity gate wants.** For `per_record` packing
+  that is ONE record, selected by a `RECORD`-style index so the run reads as
+  "score mine"; for `batched` it is one batch. `NREC` above that default is a
+  **validation sweep**, opt-in and labelled as such in the output, which is the
+  only thing the multi-record loop is for: giving the FHE-vs-twin gate more
+  samples.
+- **A sweep must not share keys across independent encryptors.** If Stage 1 says
+  each record's owner holds its own key, generate a key set per record inside the
+  sweep and say so in the output. Running one `keygen` and scoring N records under
+  it contradicts the privacy model the application claims, and a reader will
+  conclude the server batches everyone together under one key.
+- **Keep the per-request result separate from offline model quality.** The run
+  should lead with what the deployed system returns for the record it scored, then
+  report population metrics separately, labelled as computed in the clear over a
+  labeled set. Printing only aggregates makes an encrypted single-record protocol
+  read as a group analysis, and makes plaintext validation numbers look like
+  output of the encrypted run.
 
 Generate `run_test.sh` from the skeleton below. Keep the unbracketed lines as
 they are, in particular the mode parsing, the home provisioning, the negative
@@ -145,7 +161,8 @@ Usage: ./run_test.sh [--cpu | --sim | --sim-full | -h]
               (compare --sim and --sim-full to surface any hollow-recording divergence)
 Env: FOG_TARGET (default FOG; FUNC_SIM = hardware-free simulator)
      RINGCHK   (set to --no-ring-dim-check only for a deliberately small ring)
-     NREC      records to score
+     RECORD    which record to score (default 0)
+     NREC      validation-sweep size (default 1)
 EOF
 }
 
@@ -170,9 +187,10 @@ case "$MODE" in
   fog) HOLLOW_FLAG="--hollow";;
   sim) [ "$SIMFULL" = 1 ] || HOLLOW_FLAG="--hollow";;
 esac
-case "$MODE" in                   # trace modes are heavier per record than plain CPU
-  cpu) NREC="${NREC:-<n_cpu>}";; sim) NREC="${NREC:-<n_sim>}";; fog) NREC="${NREC:-<n_fog>}";;
-esac
+# The deployment's unit of work is the default: one record for per_record packing,
+# one batch for batched. NREC above it is an opt-in validation sweep.
+RECORD="${RECORD:-0}"             # which record to score
+NREC="${NREC:-1}"
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 # --sim and --sim-full get separate run dirs so the sim-vs-sim-full cross-check
