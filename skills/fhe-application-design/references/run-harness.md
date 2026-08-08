@@ -123,11 +123,12 @@ Provide `-h`/`--help` listing the four modes and the env knobs:
   **validation sweep**, opt-in and labelled as such in the output, which is the
   only thing the multi-record loop is for: giving the FHE-vs-twin gate more
   samples.
-- **A sweep must not share keys across independent encryptors.** If Stage 1 says
-  each record's owner holds its own key, generate a key set per record inside the
-  sweep and say so in the output. Running one `keygen` and scoring N records under
-  it contradicts the privacy model the application claims, and a reader will
-  conclude the server batches everyone together under one key.
+- **The default run must match the Stage 1 security model**, whatever that model
+  is: one encryptor per record, or a single encryptor owning a whole batch. A
+  validation sweep may take shortcuts the deployment would not, reusing one key
+  set across records being the usual one, so that measuring quality over many
+  inputs stays fast. Label the shortcut in the output so the sweep is not read as
+  the deployment shape.
 - **Keep the per-request result separate from offline model quality.** The run
   should lead with what the deployed system returns for the record it scored, then
   report population metrics separately, labelled as computed in the clear over a
