@@ -123,12 +123,11 @@ Generate `run_test.sh` from the skeleton below. Keep the unbracketed lines as
 they are, in particular the mode parsing, the home provisioning, the negative
 test, the key preflight, and the `fog submit` dispatch; fill the `<...>`
 placeholders and the three report blocks for the application. Step 5 below is
-written for **per-record** packing (the `for` loop over `NREC`). A **batched**
+written for **per-record** packing (the `for` loop over `NREC`). For a **batched**
 design (column-major, records across slots, which the single-encryptor case in
-SKILL.md recommends) is not a small tweak here: replace the whole loop with one
-`encrypt` and one server run over the batch, and read `NREC` as the number of
-records packed into the batch rather than an iteration count. Keep everything else
-(home provisioning, negative test, key preflight, dispatch) as is.
+SKILL.md recommends) swap step 5 for the batched form in "Batched step 5" below —
+one `encrypt`, one server run, one decrypt over the batch — and keep everything
+else (home provisioning, negative test, key preflight, dispatch, reporting) as is.
 
 ```bash
 #!/usr/bin/env bash
@@ -242,6 +241,78 @@ done
 <profile block>
 ```
 
+### Batched step 5 (single-encryptor, column-major — the recommended default)
+
+Step 5 above is the **per-record** form. For a single-encryptor design that packs
+records across slots (SKILL.md's recommended packing for that case), replace the
+`for` loop with **one** encrypt, **one** server run, and **one** decrypt over the
+whole batch. `NREC` is then the number of records packed into the batch (≤ the slot
+count), not a loop count. Steps 1–4 and 6 are unchanged, and the server branch
+(Fog / `--sim` / `--sim-full` / `--cpu`, with `$HOLLOW_FLAG` / `$RINGCHK` and the
+peak-RSS wrap) is identical to the loop version — only the encrypt and decrypt
+around it change:
+
+```bash
+# 5 (batched). encrypt once -> one ciphertext per feature column (bounds enforced in <app>_encrypt)
+"$BUILD/<app>_encrypt" "$CLIENT" <input args>          # writes $CLIENT/ct_x_f0.bin ... ct_x_fK.bin
+cp "$CLIENT"/ct_x_f*.bin "$SERVER/"                     # only ciphertext crosses
+if [ "$MODE" = "fog" ]; then
+  fog submit "$BUILD/<app>_server" "$SERVER" $HOLLOW_FLAG --target="$FOG_TARGET"
+else
+  "$BUILD/<app>_server" "$SERVER" $FLAG $HOLLOW_FLAG $RINGCHK   # wrap for wall-clock + peak RSS (rusage, as above)
+fi
+cp "$SERVER"/ct_result*.bin "$CLIENT/"                 # one result ciphertext (or a few, e.g. per class)
+"$BUILD/<app>_decrypt" "$CLIENT" > "$RUN/decrypted.csv" # decrypt unpacks all NREC records' outputs at once
+```
+
+Choose per-record only when the design genuinely encrypts one record at a time
+(e.g. independent encryptors, or a per-record request/response shape); the batched
+form is the default for the single-encryptor full-book case.
+
+### On the DSL path
+
+The skeleton above uses the OpenFHE-path binary interface
+(`"$BUILD/<app>_keygen" "$CLIENT"`). Generated DSL binaries differ; keep the
+skeleton's structure (the four modes, the two homes, the negative test, the
+reporting order) and change:
+
+- **Binary interface: a profile index plus the working directory, not a home
+  argument.** Each generated `@stage("name")` binary takes the profile index as
+  `argv[1]` and reads/writes relative to the current directory (`root()` is the
+  process CWD). Provision each home and `cd` into it before running the stage:
+  `(cd "$SERVER" && "$BUILD/<stage-name>" "$PROFILE")`, with `BUILD=nb_out/build`.
+  The binaries are named for their `@stage`s (`key_generation`, `encrypt_...`, the
+  server-compute stage, `decrypt_...`), not
+  `<app>_keygen`/`_encrypt`/`_server`/`_decrypt`.
+- **Sim modes need two server invocations; `--cpu` also records a trace.** The
+  generated `@hardware` server replays only on a cache-valid run: a first `--sim` /
+  `--sim-full` invocation records the trace and stops, serializing a placeholder, and
+  only a second invocation calls `replay()` and reconstructs the real values. Clear
+  the trace cache once at the top, then invoke the server **twice** for the sim modes
+  (a single invocation decrypts garbage). `--cpu` computes real math in one pass but
+  still records, so a `<stage>_workload_*` dir and a `.fhetch` file appear under
+  `--cpu` too — cover them in `.gitignore` and the Makefile `clean`.
+- **Negative test: assert key absence, don't expect the server to refuse.** The
+  generated `@server` binary has no runtime secret-key guard (the compile-time
+  `@server` / `SecretKey` split is the guarantee), so `run_test` asserts there is no
+  `sk.bin` in the server home before launching, rather than planting one and
+  expecting a nonzero exit.
+- **Server key set and local-replay routing.** Provision `cc`/`pk`/`mk`/`rk` into
+  the server home: the generated `@server` hard-requires `rk.bin`
+  (EvalSum/automorphism keys) and aborts with "Failed to load EvalAutomorphism key"
+  without it, even for a rotation-free circuit (the non-minimal-keygen pitfall in
+  `implementing-with-nb-dsl.md`). Local `--sim`/`--sim-full` replay is routed by
+  `NBCC_FHETCH_DRIVER`
+  (`$NIOBIUM_CLIENT_DIR/vendor/niobium-fhetch/build/tests/fhetch_driver/fhetch_driver`)
+  plus `LD_LIBRARY_PATH` (and `DYLD_LIBRARY_PATH` on macOS).
+- **Small-ring local testing.** The `@hardware` record path enforces the N = 2^16
+  hardware floor and aborts a deliberately small local ring ("Ring dimension … not
+  compatible with Niobium Hardware") unless `--no-ring-dim-check` is passed to the
+  stage binary — forward `$RINGCHK` to the DSL server for local `--cpu`/`--sim` as
+  the OpenFHE skeleton does. Set the small ring itself via a `ring_dim` field on the
+  `Instance` struct (a literal `ring_dim` in the `scheme` block fixes it for all
+  profiles; `scheme.override(ring_dim:)` is a no-op).
+
 ## Makefile
 
 A `clean` target that removes everything a build or a run regenerates: the
@@ -272,9 +343,10 @@ numbers forward; a run does not write to them.
 
 ```gitignore
 # Generated by the Niobium FHE Application Design AI Assistant (FHEanna).
-# Build tree
-/build/                       # OpenFHE path
-/nb_out/build/                # DSL path (keep the generated nb_out sources)
+# Build tree (OpenFHE path)
+/build/
+# Build tree (DSL path: keep the generated nb_out sources, ignore its build/)
+/nb_out/build/
 # Per-run homes provisioned by run_test.sh (keys, ciphertexts)
 /run_cpu/
 /run_sim/
@@ -293,17 +365,29 @@ __pycache__/
 
 ## Build and validate
 
-Build once, then validate locally on CPU, both through the wrapper. The prefix
-path points at the built niobium-client: `/opt/niobium-client` inside the image,
-or the local checkout in `NIOBIUM_CLIENT_DIR`. One expression covers both because
-the variable defaults to the in-image path, and the layout under it
-(`vendor/lib/niobium-client`, `vendor/lib/openfhe`) is identical either way:
+Build once, then validate locally on CPU, both through the wrapper. `NC` is the
+built niobium-client: `/opt/niobium-client` inside the image, or the local checkout
+in `NIOBIUM_CLIENT_DIR` (the default covers the image, and the layout under it is
+identical either way). The build command depends on the implementation path.
+
+**OpenFHE path** — the app's own `CMakeLists.txt` finds the SDK with
+`find_package(NiobiumFhetch)` off `CMAKE_PREFIX_PATH`:
 
 ```bash
 NC="${NIOBIUM_CLIENT_DIR:-/opt/niobium-client}"
 ./run-in-container.sh "cmake -S . -B build \
     -DCMAKE_PREFIX_PATH='$NC/vendor/lib/niobium-client;$NC/vendor/lib/openfhe' \
     && cmake --build build -j"
+./run-in-container.sh "./run_test.sh --cpu"
+```
+
+**DSL path** — build the generated `nb_out/` project, which locates the SDK via
+`NIOBIUM_CLIENT_ROOT` (it does not use `find_package` / `CMAKE_PREFIX_PATH`):
+
+```bash
+NC="${NIOBIUM_CLIENT_DIR:-/opt/niobium-client}"
+./run-in-container.sh "cmake -S nb_out -B nb_out/build -DNIOBIUM_CLIENT_ROOT='$NC' \
+    && cmake --build nb_out/build -j"
 ./run-in-container.sh "./run_test.sh --cpu"
 ```
 

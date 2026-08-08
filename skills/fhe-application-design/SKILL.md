@@ -1016,10 +1016,11 @@ The key parameters for CKKS (and analogous choices for BFV/BGV):
   128-bit security requires N = 2^16 regardless. **Set the ring dimension
   explicitly** — in OpenFHE, `CCParams<CryptoContextCKKSRNS>::SetRingDim(65536)`
   — rather than relying on it being inferred from the batch/slot count. An
-  under-set ring silently drops below the floor and fails key generation. (If you
-  take the DSL path, the equivalent is a literal `ring_dim` in the
-  `scheme` block; don't carry it only on the `Instance` struct, or codegen falls
-  back to `n_slots` = N/2.)
+  under-set ring silently drops below the floor and fails key generation. (On the
+  DSL path, set the ring with a literal `ring_dim` in the `scheme` block for a
+  single fixed ring, or a `ring_dim` field on the `Instance` struct for a
+  per-profile ring; set it in one of those two places or codegen infers it from the
+  slot count. `scheme.override(ring_dim:)` is a no-op.)
 
 - **Multiplicative depth.** Set to match your circuit's depth budget from
   Stage 5. This is the most important parameter — it drives the modulus chain

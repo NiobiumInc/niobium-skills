@@ -75,16 +75,24 @@ follows; produce all of them.
   `run_test.sh` (the four modes with the Fog as the default target), and `Makefile`
   described in `run-harness.md`. The pass criterion is unchanged: encrypted output
   against the harness's faithful twin (Stage 7, polynomial activations) within the
-  recorded noise tolerance, zero decision flips. Build the
-  generated `nb_out/` project, run the stage binaries in order, and report the same
-  metrics: the application's own quality first, then FHE-vs-twin error, then the
-  deployment profile. Wire `fhetch_sim` (`NBCC_FHETCH_SIM`,
-  `LD_LIBRARY_PATH`) into the `--sim` mode.
+  recorded noise tolerance, zero decision flips. Build the generated `nb_out/`
+  project (step 3 of the Workflow), run the stage binaries in order, and report the
+  same metrics: the application's own quality first, then FHE-vs-twin error, then the
+  deployment profile. Wire `fhetch_sim` (`NBCC_FHETCH_SIM`, `LD_LIBRARY_PATH`) into
+  the `--sim` mode. Local replay is routed by **`NBCC_FHETCH_DRIVER`** (point it at
+  `<niobium-client>/vendor/niobium-fhetch/build/tests/fhetch_driver/fhetch_driver`),
+  plus `LD_LIBRARY_PATH` (and `DYLD_LIBRARY_PATH` on macOS) covering
+  `vendor/lib/openfhe/lib` and the fhetch build. `run-harness.md` covers both paths;
+  use its DSL build command and its DSL `run_test.sh` stage-binary interface
+  (profile index + working directory).
 - **Client/server two-process demo.** Required here too. The `@stage` binaries
-  already run as separate processes exchanging serialized files, but stand them up as
+  already run as separate processes exchanging serialized files; stand them up as
   the contract specifies: two homes, the secret key only client-side, only ciphertext
-  crossing, the server refusing a planted secret key, byte-count logging, and a
-  server home safe to copy to an untrusted host.
+  crossing, byte-count logging, and a server home safe to copy to an untrusted host.
+  The `@server` binary has **no runtime secret-key guard** (the compile-time
+  `@server` / `SecretKey` ban is the real guarantee), so enforce key absence in the
+  harness: `run_test` and the demo launcher assert there is no `sk.bin` in the server
+  home before starting the server, rather than relying on the server to refuse one.
 - **Fog deployment.** A `@server @hardware(cache_key: [...])` stage compiles with the
   Niobium record/replay instrumentation built in, so the default `run_test` dispatch
   under `fog submit --target=FOG` works the same as the OpenFHE path, with no
@@ -92,12 +100,9 @@ follows; produce all of them.
   minimum-ring-dim guard in `niobium-client-fog-variant.md` apply unchanged.
   **Hollow recording is automatic:** the codegen recovers the `--hollow` flag via
   `is_hollow_mode()` after `init()`, brackets the record pass with
-  `enable_hollow_mode()`, and rehydrates `vec<enc>` results from the replay. So the
-  generated `run_test.sh` carries the same mode-driven default as the OpenFHE path
-  (see "Hollow recording and the run modes" in `niobium-client-fog-variant.md`):
-  the Fog and `--sim` record hollow, `--sim-full` records real math with the
-  ring-level ciphertext-identity check, `--cpu` has no record pass. Nothing to
-  hand-wire.
+  `enable_hollow_mode()`, and rehydrates `vec<enc>` results from the replay. The Fog
+  and `--sim` record hollow, `--sim-full` records real math with the ring-level
+  ciphertext-identity check.
 
 ## Workflow
 
@@ -211,6 +216,15 @@ implementations — read the design reference and the DSL code side by side:
    for, which can substantially enlarge the server key bundle. This is a current
    codegen limitation, not a design error; if bundle size matters, note it and keep
    `requires { ... }` and `slot_sum` usage as tight as the circuit allows.
+
+7. **`load_matrix` picks its reader from the literal call argument, not the runtime
+   path.** The codegen selects the text reader only when the argument *expression*
+   contains `.txt`/`.csv`; a path returned by a helper (e.g. `load_matrix(model_file(inst), ...)`)
+   hides the extension and silently falls back to the **binary** reader, so a text
+   file is read as garbage doubles that still run and serialize cleanly (a silent
+   wrong answer, not a crash). Pass a literal `.txt`/`.csv` argument, or ship the
+   matrix as binary `.bin` so the binary reader is correct. This bit a build; treat
+   it as a hard rule until the reader inspects the runtime extension.
 
 ## What still requires raw OpenFHE
 
