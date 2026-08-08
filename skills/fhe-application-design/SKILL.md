@@ -1506,9 +1506,10 @@ Also produce a fifth program:
    serialized file sizes at each boundary (keys, input ciphertexts, output
    ciphertexts — for comparison against Stage 6 estimates), wall-clock
    time for each stage, and the **peak resident memory of the server stage**
-   (on Linux, wrap the server invocation and read
+   (wrap the server invocation and read
    `resource.getrusage(RUSAGE_CHILDREN).ru_maxrss` — no extra packages
-   needed). Peak server RSS is the number every deployment-sizing
+   needed, and it works in the image where `/usr/bin/time` is absent; ru_maxrss is
+   bytes on macOS, kilobytes on Linux). Peak server RSS is the number every deployment-sizing
    conversation asks for, and Stage 6's estimates cover key/ciphertext
    *sizes* but not the working set with temporaries (bootstrapping keys and
    scratch can dominate); measure it, don't infer it. This program is a

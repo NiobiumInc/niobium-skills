@@ -309,12 +309,6 @@ Path A (image):
   owned by you.
 - **The first build is large / slow** — expected (it compiles OpenFHE + carries a
   Python ML stack). It is a one-time cost; subsequent runs are instant.
-- **Apple Silicon: `WARNING: ... platform (linux/amd64) does not match ... arm64`
-  and slow runs** — the published image is `linux/amd64` only, so it runs under
-  emulation on arm64 Macs (a large runtime penalty; the encrypted server can be
-  several times slower). It is correct, just slow. For native speed on Apple
-  Silicon use Path B (a local build compiles for arm64), until the image ships a
-  multi-arch (`arm64`) variant.
 
 Path B (local build):
 

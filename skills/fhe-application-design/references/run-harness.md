@@ -40,7 +40,9 @@ FOG=(); [ -d "$HOME/.fog" ] && FOG=(-v "$HOME/.fog:/root/.fog")
 # behaves the same in the container as it does in local mode (docker does not
 # inherit the caller's environment). Only knobs actually set are passed.
 ENVFWD=(); for v in RING_DIM RINGCHK NREC N_ENC FOG_TARGET; do [ -n "${!v:-}" ] && ENVFWD+=(-e "$v"); done
-exec docker run --rm -v "$PWD":/work -w /work "${FOG[@]}" "${ENVFWD[@]}" "$IMAGE" bash -c "$*"
+# ${arr[@]+"${arr[@]}"} guards empty-array expansion under `set -u` on bash 3.2
+# (macOS default), which otherwise aborts with "unbound variable".
+exec docker run --rm -v "$PWD":/work -w /work ${FOG[@]+"${FOG[@]}"} ${ENVFWD[@]+"${ENVFWD[@]}"} "$IMAGE" bash -c "$*"
 ```
 
 In local mode the app runs in place, so the `fog` CLI and `nbc` must already be on
@@ -220,9 +222,10 @@ for ((i=0; i<NREC; i++)); do
     # --sim passes --hollow (server records hollow, skips its ring-level check);
     # --sim-full omits it (real record, so the server's ring-level check runs).
     "$BUILD/<app>_server" "$SERVER" $FLAG $HOLLOW_FLAG $RINGCHK   # wrap to capture wall-clock + peak RSS
-    # Peak-RSS wrap differs by OS: Linux `/usr/bin/time -v` reports "Maximum
-    # resident set size" in KB; macOS `/usr/bin/time -l` reports "maximum
-    # resident set size" in bytes. Local Path B runs on either, so parse both.
+    # For peak RSS, wrap the server in a small Python parent that reads
+    # resource.getrusage(RUSAGE_CHILDREN).ru_maxrss (portable, needs no packages,
+    # and works in the image — /usr/bin/time is not installed there). ru_maxrss is
+    # bytes on macOS, kilobytes on Linux; label the unit accordingly.
   fi
   cp "$SERVER/ct_result.bin" "$CLIENT/ct_result_$i.bin"
   "$BUILD/<app>_decrypt" "$CLIENT" "$CLIENT/ct_result_$i.bin" >> "$RUN/decrypted.csv"
