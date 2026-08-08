@@ -128,7 +128,9 @@ Provide `-h`/`--help` listing the four modes and the env knobs:
   validation sweep may take shortcuts the deployment would not, reusing one key
   set across records being the usual one, so that measuring quality over many
   inputs stays fast. Label the shortcut in the output so the sweep is not read as
-  the deployment shape.
+  the deployment shape. This applies to every entry point that runs the
+  application, `run_test.sh` and the two-process demo alike: a demo scoring several
+  records under one key misrepresents the protocol exactly as the run script would.
 - **Keep the per-request result separate from offline model quality.** The run
   should lead with what the deployed system returns for the record it scored, then
   report population metrics separately, labelled as computed in the clear over a
@@ -450,14 +452,15 @@ as description or promotion. Beyond whatever the user asked for, it always inclu
   boundary sizes).
 - **Client/server deployment.** The two-process run and its two-host variant (copy
   the server home to untrusted infrastructure; the secret key never leaves the
-  client).
+  client). Say how many records it scores; like `run_test.sh` it defaults to the
+  deployment's unit of work.
 - **The error ledger, as a table.** Three rows: reference vs ground truth, twin vs
   reference, FHE vs twin. Attribute each residual to its actual source (model change,
   polynomial approximation, fixed-point quantization, encryption noise); do not fold
   quantization into the polynomial row.
 - **Cleanup.** A `make clean` command that removes the build tree and every per-run
-  artifact. State that `clean` lists its targets explicitly and never globs `run_*`,
-  so it cannot delete `run_test.sh`. The committed inputs under `data/` (and, on the
+  artifact. State that `clean` matches run homes with the directory-only glob
+  `run_*/`, so it cannot delete `run_test.sh`. The committed inputs under `data/` (and, on the
   DSL path, the `.niob` sources and the generated `nb_out/`) survive, so a later run
   does not regenerate them. The same artifacts are ignored by the `.gitignore` the app
   ships, so a run leaves the working tree clean.
