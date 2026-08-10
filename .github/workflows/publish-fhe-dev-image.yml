@@ -6,6 +6,14 @@ name: Publish FHE-dev image
 # source. The image is smoke-tested before it is pushed, so a broken build never
 # reaches users.
 #
+# MULTI-ARCH: the published `:<version>` and `:latest` tags are manifest lists
+# covering linux/amd64 and linux/arm64, so Apple Silicon (and other arm64) hosts
+# pull a NATIVE image instead of running amd64 under emulation. Each architecture
+# is built on its OWN native runner, since compiling OpenFHE from source under
+# emulation would blow the job timeout. This needs an arm64 hosted runner
+# (`ubuntu-24.04-arm`), which is free for public repos; private repos must enable
+# arm64 hosted runners for the org first.
+#
 # Fires on an image version tag (fhe-dev-v*), or manually via the Actions tab.
 # The `fhe-dev-` prefix keeps image releases separate from skill releases.
 on:
@@ -26,8 +34,38 @@ permissions:
   packages: write          # lets GITHUB_TOKEN push to the org's GHCR
 
 jobs:
-  build-test-push:
+  # Resolve the image ref once so build and merge agree on it.
+  prep:
     runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.ref.outputs.image }}
+      version: ${{ steps.ref.outputs.version }}
+    steps:
+      - name: Compute image ref
+        id: ref
+        run: |
+          owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          version="${{ github.event.inputs.tag || github.ref_name }}"
+          version="${version#fhe-dev-}"          # fhe-dev-v0.1.0 -> v0.1.0
+          echo "image=ghcr.io/$owner/fhe-dev" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  # One native build per architecture: build -> smoke test -> push a per-arch tag.
+  # The per-arch tags (:<version>-amd64 / :<version>-arm64) are assembled into the
+  # user-facing manifest lists by the `merge` job only after every arch passes.
+  build:
+    needs: prep
+    strategy:
+      fail-fast: true       # if one arch fails its smoke test, don't publish a half-built manifest
+      matrix:
+        include:
+          - runner: ubuntu-latest       # amd64 native
+            arch: amd64
+            platform: linux/amd64
+          - runner: ubuntu-24.04-arm    # arm64 native (free on public repos)
+            arch: arm64
+            platform: linux/arm64
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 240    # OpenFHE compiles from source (~1 hr) + torch layer
     steps:
       # GitHub-hosted runners ship ~14 GB free on /, which the OpenFHE build +
@@ -50,38 +88,48 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compute image ref
-        id: ref
+      # Native single-arch build loaded into the local daemon (no emulation, no
+      # buildx needed): docker build runs on the matching runner architecture.
+      - name: Build image (${{ matrix.arch }}, native)
         run: |
-          owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          version="${{ github.event.inputs.tag || github.ref_name }}"
-          version="${version#fhe-dev-}"          # fhe-dev-v0.1.0 -> v0.1.0
-          echo "image=ghcr.io/$owner/fhe-dev" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      # Build and LOAD into the local docker (no push yet) so we can smoke-test.
-      - name: Build image
-        uses: docker/build-push-action@v6
-        with:
-          context: skills/fhe-application-design/environment
-          file: skills/fhe-application-design/environment/Dockerfile
-          load: true
-          push: false
-          tags: ${{ steps.ref.outputs.image }}:${{ steps.ref.outputs.version }}
+          docker build \
+            -t "${{ needs.prep.outputs.image }}:${{ needs.prep.outputs.version }}-${{ matrix.arch }}" \
+            skills/fhe-application-design/environment
 
       # Gate the push: the instrumented OpenFHE must build and take the bundled
-      # examples through record -> simulate -> decrypt (a green sweep).
-      - name: Smoke test
+      # examples through record -> simulate -> decrypt (a green sweep). Native, so
+      # it actually executes rather than emulating.
+      - name: Smoke test (${{ matrix.arch }})
         run: |
           docker run --rm \
-            "${{ steps.ref.outputs.image }}:${{ steps.ref.outputs.version }}" \
+            "${{ needs.prep.outputs.image }}:${{ needs.prep.outputs.version }}-${{ matrix.arch }}" \
             make test-release
 
-      - name: Tag :latest and push
+      - name: Push per-arch tag
         run: |
-          img="${{ steps.ref.outputs.image }}"
-          ver="${{ steps.ref.outputs.version }}"
-          docker tag "$img:$ver" "$img:latest"
-          docker push "$img:$ver"
-          docker push "$img:latest"
-          echo "pushed $img:$ver and $img:latest"
+          docker push "${{ needs.prep.outputs.image }}:${{ needs.prep.outputs.version }}-${{ matrix.arch }}"
+
+  # Assemble the two per-arch images into multi-arch manifest lists and publish
+  # the user-facing tags. Only runs if BOTH arch builds+smoke tests passed.
+  merge:
+    needs: [prep, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push multi-arch manifests (:version and :latest)
+        run: |
+          img="${{ needs.prep.outputs.image }}"
+          ver="${{ needs.prep.outputs.version }}"
+          docker buildx imagetools create \
+            -t "$img:$ver" \
+            -t "$img:latest" \
+            "$img:$ver-amd64" \
+            "$img:$ver-arm64"
+          echo "published multi-arch $img:$ver and $img:latest (amd64 + arm64)"
+          docker buildx imagetools inspect "$img:$ver"
