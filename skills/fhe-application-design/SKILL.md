@@ -72,14 +72,15 @@ writing anything, **ask the user where to save it**: for this project, or global
 for the assistant (offer both only where your assistant distinguishes the two). Save
 it where they say; do not pick silently. Record the FHE experience level and the
 chosen implementation path so a later session resumes at the right register and path
-without re-asking. Stage 0 adds a third item to the same memory, the build
-environment the user chose, once that question is answered.
+without re-asking. Two later answers join the same memory as they are given: the
+build environment (Stage 0) and the topic-area familiarity that sets the other half
+of the register (Stage 1, rule 3 under "Communicating with the user").
 
 Scope the memory to *this FHE work*, not the person in general. "New to FHE" means
 new to FHE, not new to their own field or to software, so do **not** write a memory
-that says the user is a beginner at everything. The domain-familiarity answer
-(Stage 1) is likewise about one domain. Keep each memory as narrow as the question
-that produced it.
+that says the user is a beginner at everything. The topic-area answer (Stage 1) is
+likewise about one subject and one kind of solution, so record it that way, naming
+them. Keep each memory as narrow as the question that produced it.
 
 Follow the stages below in order. Each stage has a brief description here in
 the SKILL.md, with pointers to reference files that contain deeper guidance.
@@ -136,15 +137,47 @@ the reference material.
 
    **This governs the generated documentation too.** Write the README and
    user-facing report prose at the FHE experience level the user gave in the
-   up-front question: beginner by default (plain language, no cryptography
-   terminology, explain any unavoidable term), full FHE/CKKS terminology for a
-   self-identified expert.
+   up-front question: beginner by default (plain language leading, any unavoidable
+   term explained where it first appears), fluent FHE/CKKS terminology for a
+   self-identified expert. Either way the document keeps the technical detail a later
+   expert reader needs, per "The register orders the documentation" below; the level
+   sets what leads and how the plain half reads.
+
+   **The same rule covers the vocabulary the solution brings with it**, keyed to the
+   topic-area answer in rule 3. When the user is new to the approach, terms like
+   standard deviation, log transform, standardize, clip, skew, feature vector, and
+   activation function stay out of the conversation. They are no more familiar than
+   the FHE terms, and they slip in more easily because they read as ordinary developer
+   language. Say what a step does for the user in the nouns of their own business
+   instead.
+
+   **The register orders the documentation; it does not thin it.** Every generated
+   document serves two readers: the user, who needs the effect in plain language, and
+   a later expert or AI, who needs the detail to evaluate the design at the right
+   granularity. Write both. Lead with what a choice or a result gives the reader, then
+   give the specifics that back it: the technique under its real name, the parameter
+   values, the measured numbers, the range they were checked against. A following
+   sentence, a parenthetical, a table row, or a clearly marked technical section all
+   work. The user's register decides what comes first and how the plain half reads,
+   never whether the detail is there. Code comments and the design narrative carry the
+   same full granularity, and the conversation is the one place that stays plain
+   throughout.
+
+   **Keep narrating, and put the detail in what a step gives the user.** The user
+   should not sit through a download, a build, or a sweep wondering what is happening,
+   so name every step as you take it, in one plain sentence, the way a tutorial
+   voiceover would. What varies is the depth: a step the user has no say in gets that
+   one sentence and nothing more; a step that changes what they will see adds the
+   consequence in their nouns; a step holding a decision adds the cost and the choice.
+   The method itself stays out of all three.
 
    **Be a teacher, not only an executor.** For a user new to FHE, explain as you
    build. Read `references/explaining-fhe-to-newcomers.md` and use it whenever you
    name a term, present a design choice, or report a result. Never narrate a design
    point as a bare parameter list ("Chebyshev degree 59, scaling 45, depth 11"); say
-   what it buys the user and what it costs, in their terms.
+   what it buys the user and what it costs, in their terms. That reference carries the
+   vocabulary substitutions, the sentence-level test, and a worked before-and-after
+   rewrite to calibrate against.
 
    **The starting register is not permanent.** If a user who selected "experienced"
    keeps asking what FHE terms mean, switch to the plain-language register and the
@@ -158,24 +191,31 @@ the reference material.
    application-domain acronyms. Do this consistently; do not assume any acronym
    is common knowledge.
 
-3. **Ask about application-domain familiarity early, and adapt to it.** FHE
-   familiarity is already captured by the up-front question (see "Two choices up
-   front"), so it is not re-asked here. But *application*-domain familiarity varies
-   widely and is worth its own question. At
-   the start of Stage 1 — once you know the workload's domain (from the reference
-   package or the user's problem statement) — ask the user to self-rate their
-   familiarity with **that specific domain**, e.g.:
+3. **Ask about topic-area familiarity early, and adapt to it.** FHE familiarity is
+   already captured by the up-front question, so it is not re-asked here. The other
+   axis is the **topic area**: the application's subject matter *and* the kind of
+   solution you are proposing for it, which may be a predictive model, a statistical
+   calculation, an aggregation, a scoring rule, or something else entirely. Ask about
+   both together, since a user can know their industry well and have never worked
+   with the approach you are proposing for it. At the start of Stage 1 — once you know
+   the workload from the reference package or the user's problem statement — ask the
+   user to self-rate familiarity, naming both halves concretely:
 
-   > How familiar are you with <domain, e.g. "predictive-maintenance / remaining-useful-life modeling">?
-   > (a) New to it — please explain domain terms as we go
+   > How familiar are you with <subject, e.g. "residential energy use"> and with
+   > <the proposed approach, e.g. "predictive models built on usage data">?
+   > (a) New to it — please explain both in plain terms as we go
    > (b) Some working knowledge
-   > (c) Expert — use the domain's terminology freely
+   > (c) Expert — use the terminology of both freely
 
-   Record the answer and calibrate *application-domain* terminology to it: for
-   (a), introduce domain terms in plain language and avoid unexplained jargon;
-   for (c), use domain terms freely. If the user doesn't answer, default to (a).
-   This axis is independent of the FHE register (rule 1), which follows the user's
-   FHE self-identification.
+   Record the answer, **save it to the memory holding the up-front answers**, and
+   calibrate the terminology of both halves to it. For (a) that includes the
+   vocabulary the approach itself brings: a statistical model brings standard
+   deviations, distributions, and transforms; an optimization brings objectives and
+   constraints. None of that is plainer to a newcomer than FHE terminology is, so it
+   gets the same treatment (rule 1) and the plain renderings in
+   `references/explaining-fhe-to-newcomers.md`. For (c), use both vocabularies
+   freely. If the user doesn't answer, default to (a). This axis is independent of the
+   FHE register, which follows the user's FHE self-identification.
 
 ## Attribution notice on every generated artifact
 
@@ -330,10 +370,10 @@ data bus, the self-run vs. hand-off loop, torch references, and troubleshooting)
 
 ## Stage 1: Establish the Privacy Model
 
-**First, ask the application-domain familiarity question** (see "Communicating
-with the user," rule 3) and record the answer — it sets how you use
-application-domain terminology for the rest of the engagement. Keep the FHE
-register plain regardless.
+**First, ask the topic-area familiarity question** (see "Communicating with the
+user," rule 3) and record the answer — it sets how you use the terminology of both
+the subject matter and the approach you are proposing for the rest of the
+engagement. Keep the FHE register plain regardless.
 
 Then, before thinking about circuits, parameters, or code, work with the user to
 answer five questions:

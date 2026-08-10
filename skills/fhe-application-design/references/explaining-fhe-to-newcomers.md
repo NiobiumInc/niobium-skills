@@ -10,7 +10,10 @@ The goal is not to hide the real engineering. It is to make sure the user always
 knows what is happening, why, and what it costs them, without needing to read the
 skill or learn cryptography first. The precise numbers still go in the code and the
 report tables; this is about the conversation and the plain-language parts of the
-docs.
+docs. A generated document carries both layers: the plain statement of what something
+gives the reader, and the detail behind it, with every technique and parameter named,
+so a later reader with the expertise to audit the design has what they need. The
+conversation is the one place that is plain all the way through.
 
 **Who to assume you are talking to, and how to pitch it.** Picture a sharp product
 person or engineer: fluent in code and tradeoffs, with no interest in the underlying
@@ -20,6 +23,85 @@ but rejects a few more cases, and so on. So explain every term and every choice 
 "why it matters" terms, as a functional tradeoff. Only reach for a mechanism when it
 actually helps them make the call in front of them; otherwise leave it in the code
 and the tables. This is a product exercise, not a lecture.
+
+## Narrate continuously, at tutorial depth
+
+The user should never sit in dead space wondering what is happening. While an image
+downloads, a build compiles, or a sweep runs, keep talking: name what is running,
+what it is for, and what comes next. Think of a tutorial voiceover. The person
+listening picks up the shape of the work while the progress bar moves, and that is
+time well spent.
+
+What changes from step to step is the depth, not whether you speak. Every step gets
+a sentence in plain language. A step that holds a decision gets the decision too.
+
+- **A step the user has no say in gets one sentence:** what you are doing and what it
+  is for. "I am putting the dollar amounts on a common scale, so a multi-million
+  dollar commercial claim and a small residential one can be weighed by the same
+  model." Then move on, with no mechanism, no numbers, and no justification.
+- **A step that changes what the user will see adds the consequence,** in their
+  nouns. "Very large claims are capped at the top of the scored range, so every claim
+  still gets a score."
+- **A step that holds a decision adds the cost and the choice,** with your
+  recommendation. See "Framing a tradeoff as a decision" below.
+
+Two things to steer around: going quiet while something long runs, and expanding a
+step the user has no say in into a paragraph about method. One sentence at tutorial
+depth covers that step.
+
+## Say it in the user's nouns
+
+The user's nouns are the things in their business: claims, buildings, households,
+dollars, months. Every approach you might propose arrives with a vocabulary of its
+own, and to a user new to that approach (the topic-area question in SKILL.md rule 3)
+it is as foreign as cryptography vocabulary. It slips in more easily because it reads
+as ordinary developer language. Keep it out of the conversation and use the plain
+rendering there. In a generated document, the plain rendering leads and the precise
+name follows it, so both readers are served. The substitutions below are for a
+statistical model, the most common case; build the same kind of list for whatever
+approach the design actually uses:
+
+| Keep out | Say instead |
+|---|---|
+| standardize, normalize, rescale a feature | nothing, or "put the inputs on a common scale" if a sentence genuinely needs it |
+| standard deviations, sigma, z-score | a quantity the user already knows: "a $10M commercial building against a typical $300k home" |
+| log-transform, right-skewed, heavy-tailed | "claim sizes run from thousands to millions" |
+| clip, clamp, winsorize, saturate | "cap the largest values at the top of the scored range" |
+| activation function, polynomial stand-in, Chebyshev, degree | "the scoring step works within a set range of numbers" |
+| provable bound, interval, envelope | "we know up front that the values stay in range, rather than trusting the cases we happened to test" |
+| feature, feature vector, design matrix | the inputs, or the inputs by name: "coverage, replacement cost, property value" |
+| quantize, precision, scaling | "how much fine detail is kept" |
+
+The test is mechanical: if a sentence names a technique or a statistic, it fails.
+Replace the name with what the technique does for the user, in their nouns, or cut
+the sentence.
+
+### A rewrite, for calibration
+
+Too technical, and about the wrong subject:
+
+> The dollar features are heavily right-skewed. Standardizing them raw would leave a
+> $10M commercial building sitting 50 standard deviations out, and that would break
+> the encrypted arithmetic, because the polynomial stand-in for the activation
+> function only behaves inside a bounded range. So: log-transform the dollar fields
+> first, then standardize, then clip every feature to plus or minus 4 standard
+> deviations. That clipping buys something: with inputs provably inside a box, the
+> hidden layer is one arithmetic step away from a known range, so I can prove a bound
+> on what reaches the activation.
+
+Every sentence there is about method, and the one thing the user can act on arrives
+last. The whole message is a paragraph:
+
+> One thing to know about unusual claims. Your book runs from small residential
+> claims to multi-million-dollar commercial ones, and encrypted scoring has to know
+> the range of numbers it will handle before it starts. Very large claims are capped
+> at the top of that range, so every claim still gets scored and an outsized one
+> still reads as outsized. What it costs you: the model cannot tell a $10M building
+> from a $50M one, since both sit at the top of the range. If that difference matters
+> for your book, say so and I will widen the range, which makes each run slower.
+
+That version gives one observable behavior (no claim is refused), one cost (the top
+of the range is flat), and one decision the user can make. It never says how.
 
 ## Two habits that matter most
 
