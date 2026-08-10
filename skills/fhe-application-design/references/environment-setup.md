@@ -48,10 +48,26 @@ before Stage 1 and treat the smoke test as the gate.
 - **Path B — a local niobium-client build.** Needs a C++ toolchain, no Docker.
 
 Both give the same instrumented OpenFHE and `libnbfhetch`, and everything
-downstream (the run harness, the run modes, the later commands) is identical. If
-the skill is installed under a niobium-client clone (its path contains
-`niobium-client/.claude/skills/` or `niobium-client/.agents/skills/`), default to
-Path B against that checkout and confirm with the user; otherwise use Path A.
+downstream (the run harness, the run modes, the later commands) is identical.
+
+**The path is the user's choice, so ask for it** (SKILL.md Stage 0 carries the
+question wording). Search for an existing niobium-client installation first and
+tell the user that is what you are looking for, so the question carries the result:
+
+```bash
+# an existing pointer
+echo "${NIOBIUM_CLIENT_DIR:-<unset>}"
+# a checkout this skill is installed under, the starter kit's vendored submodule,
+# or a sibling clone
+ls -d ../niobium-client-fog-starter-kit/niobium-client ../niobium-client 2>/dev/null
+# built already? the OpenFHE path needs the installed Config file
+ls <checkout>/vendor/lib/niobium-client/lib/cmake/NiobiumFhetch/NiobiumFhetchConfig.cmake 2>/dev/null
+```
+
+Recommend Path A when the search finds nothing. When it finds a built checkout,
+report the path and note that Path B builds against it without the source build,
+then let the user decide. Take Path B without asking only when Docker is absent
+and cannot be installed.
 
 ## Path A: FHE-dev image
 
@@ -138,8 +154,10 @@ sudo apt-get update && sudo apt-get install -y build-essential cmake libssl-dev 
 
 Acquire the client, then build it. Three ways to acquire it:
 
-- **Already have a checkout** (you are working inside one, or the starter kit
-  vendors it as a submodule): use it as is and skip to the build. For the OpenFHE
+- **Already have a checkout** (you are working inside one, or the Niobium Fog
+  starter kit beside the project vendors it as a submodule at
+  `../niobium-client-fog-starter-kit/niobium-client/`): use it as is and skip to
+  the build. For the OpenFHE
   path, confirm it was installed with `make install-release` (its
   `vendor/lib/niobium-client/lib/cmake/NiobiumFhetch/` holds
   `NiobiumFhetchConfig.cmake`); if only `NiobiumFhetchTargets.cmake` is there, run

@@ -72,7 +72,8 @@ writing anything, **ask the user where to save it**: for this project, or global
 for the assistant (offer both only where your assistant distinguishes the two). Save
 it where they say; do not pick silently. Record the FHE experience level and the
 chosen implementation path so a later session resumes at the right register and path
-without re-asking.
+without re-asking. Stage 0 adds a third item to the same memory, the build
+environment the user chose, once that question is answered.
 
 Scope the memory to *this FHE work*, not the person in general. "New to FHE" means
 new to FHE, not new to their own field or to software, so do **not** write a memory
@@ -238,10 +239,42 @@ The work runs at two speeds:
   provisioned and *who* runs it (your execution mode, below) are separate choices,
   and neither depends on which product the user is in.
 
-Provision it once. Default to the **FHE-dev image** (Path A). Switch to a **local
-niobium-client build** (Path B) when the skill is installed under a niobium-client
-clone or the Niobium Fog starter kit (detect this and confirm with the user), or
-when Docker is unavailable. The image path is three steps:
+Provision it once, and **ask the user which path to use** instead of deciding for
+them. Before asking, look for a niobium-client installation the machine already
+has, and tell the user that is what you are looking for, so the question arrives
+with that answer in hand. Check:
+
+- `NIOBIUM_CLIENT_DIR`, if it is already exported.
+- A niobium-client checkout this skill is installed under (its path contains
+  `niobium-client/.claude/skills/` or `niobium-client/.agents/skills/`).
+- The Niobium Fog starter kit sitting beside the project, which vendors the client
+  as a submodule at `../niobium-client-fog-starter-kit/niobium-client/`.
+- A sibling checkout at `../niobium-client/`.
+
+Report what you found and whether it is already built (the OpenFHE path needs
+`vendor/lib/niobium-client/lib/cmake/NiobiumFhetch/NiobiumFhetchConfig.cmake`),
+then ask:
+
+> How do you want to provide the build-and-run environment?
+> (a) The FHE-dev container image (recommended): the assistant pulls a prebuilt
+>     image, and Docker is the only install on your side.
+> (b) A local niobium-client build on this machine: no Docker, and you install a
+>     C++ toolchain first. The assistant then builds the client from source, which
+>     takes about an hour unless the search above found a built checkout.
+
+Recommend (a) when the search turns up nothing. When it turns up a built checkout,
+say that (b) reuses it and skips the source build, and let the user pick. Choose
+(b) without asking only when Docker is absent and cannot be installed, and say
+that is why.
+
+**Add the answer to the memory holding the two up-front choices**, in the location
+the user already chose for it, so a later session provisions the same way without
+re-asking. Record the path chosen and, for Path B, the checkout it points at. A
+checkout path belongs in a project-scoped memory; in a global memory, record the
+path only if it is stable across the user's projects, and otherwise record the path
+choice alone and search again.
+
+For the image path (Path A), three steps:
 
 1. Install Docker (Docker Desktop on macOS/Windows) if it isn't already present,
    the only unavoidable local install.
