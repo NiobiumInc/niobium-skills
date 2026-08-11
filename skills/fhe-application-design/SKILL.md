@@ -33,48 +33,35 @@ layout, parameter selection, and implementation.
 
 ## How to Use This Skill
 
-**Two choices up front.** Before starting the stages, ask the user two questions and
-record the answers.
-
-First, their FHE experience. This sets the register for the whole conversation and
-for the generated documentation (see "Communicating with the user"):
+**One question up front.** Before starting the stages, ask the user about their FHE
+experience and record the answer. This sets the register for the whole conversation
+and for the generated documentation (see "Communicating with the user"):
 
 > How much have you worked with Fully Homomorphic Encryption (FHE)?
 > (a) New to FHE: keep the explanation in plain terms
 > (b) Experienced with FHE: use FHE terminology freely
 
-Second, which implementation path to build. Put the maturity of each path in the
-option label itself, not only in the sentence that follows it:
-
-> How do you want to build this application?
-> (a) Niobium DSL (alpha-stage tool): a higher-level language that expresses the
->     computation and generates the OpenFHE program for you.
-> (b) OpenFHE directly (robust, mature library): hand-written OpenFHE, following
->     the full stage-by-stage design below.
+Three more questions arrive at the stage that needs each answer, so the user decides
+with the design in front of them rather than before it exists: the build environment
+at Stage 0, their familiarity with the topic area and the approach at Stage 1 (rule 3
+under "Communicating with the user"), and which implementation path to build at
+Stage 8. Stages 1 through 7 are the same work whichever path is chosen, so nothing
+earlier depends on that answer.
 
 Phrase every option in terms of the party who acts, so it is never ambiguous who
-"I" or "you" refers to when the assistant renders the choice. The assistant is
+"I" or "you" refers to when the assistant renders a choice. The assistant is
 "the assistant"; the person you are talking to is "you." (Bare "I"/"you" flips
-easily coming from an AI, so name the actor instead.)
+easily coming from an AI, so name the actor instead.) This applies to every question
+the skill asks, at whatever stage it comes up.
 
-Recommend (a) the DSL to a user new to FHE, and state plainly that the DSL is
-alpha-stage while OpenFHE is robust so they can weigh it. The two choices are
-independent: an FHE beginner may still choose OpenFHE, and an expert may choose the
-DSL.
-
-Both paths follow every stage below; the language choice takes effect at Stage 8,
-where (a) implements the validated design per `references/implementing-with-nb-dsl.md`
-and (b) hand-writes OpenFHE per `references/implementing-with-openfhe.md`. Both
-target the Niobium Fog and differ only in how the program is authored.
-
-**Save the two answers as a memory** if your AI assistant supports one. Before
-writing anything, **ask the user where to save it**: for this project, or globally
-for the assistant (offer both only where your assistant distinguishes the two). Save
-it where they say; do not pick silently. Record the FHE experience level and the
-chosen implementation path so a later session resumes at the right register and path
-without re-asking. Two later answers join the same memory as they are given: the
-build environment (Stage 0) and the topic-area familiarity that sets the other half
-of the register (Stage 1, rule 3 under "Communicating with the user").
+**Save the answer as a memory** if your AI assistant supports one. Before writing
+anything, **ask the user where to save it**: for this project, or globally for the
+assistant (offer both only where your assistant distinguishes the two). Save it where
+they say; do not pick silently. Record the FHE experience level so a later session
+resumes at the right register without re-asking. The three later answers join the same
+memory as they are given: the build environment (Stage 0), the topic-area familiarity
+that sets the other half of the register (Stage 1), and the implementation path
+(Stage 8).
 
 Scope the memory to *this FHE work*, not the person in general. "New to FHE" means
 new to FHE, not new to their own field or to software, so do **not** write a memory
@@ -307,7 +294,7 @@ say that (b) reuses it and skips the source build, and let the user pick. Choose
 (b) without asking only when Docker is absent and cannot be installed, and say
 that is why.
 
-**Add the answer to the memory holding the two up-front choices**, in the location
+**Add the answer to the memory holding the FHE experience level**, in the location
 the user already chose for it, so a later session provisions the same way without
 re-asking. Record the path chosen and, for Path B, the checkout it points at. A
 checkout path belongs in a project-scoped memory; in a global memory, record the
@@ -1562,8 +1549,27 @@ blanks and confirming the pre-written docs*, not writing from scratch.
 
 Only after the twin is validated and approved. This stage has a **path-independent
 contract**: the four-program architecture, the deliverables, and the validation
-below apply however you build. Implement it via the path chosen up front (see
-"Two choices up front"):
+below apply however you build.
+
+**Ask which implementation path to build, here at the stage that uses the answer.**
+The design is settled by now, so the user is choosing how to author it rather than
+committing to a toolchain sight unseen. Put the maturity of each path in the option
+label itself, not only in the sentence that follows it:
+
+> How do you want to build this application?
+> (a) Niobium DSL (alpha-stage tool): a higher-level language that expresses the
+>     computation, and the assistant generates the OpenFHE program from it.
+> (b) OpenFHE directly (robust, mature library): the assistant hand-writes OpenFHE
+>     against the design worked out in the stages above.
+
+Recommend (a) the DSL to a user new to FHE, and state plainly that the DSL is
+alpha-stage while OpenFHE is robust so they can weigh it. This choice is independent
+of the FHE experience answer: a beginner may still choose OpenFHE, and an expert may
+choose the DSL. A BFV/BGV design uses the OpenFHE path, since the DSL is CKKS-only;
+say so rather than offering a choice that Stage 4 already made. Save the answer to
+the memory holding the earlier answers.
+
+The two paths:
 
 - **OpenFHE C++** — hand-written OpenFHE. The build mechanics (CMake, the shared
   `run_circuit`, serialization, context features) are in
@@ -1574,9 +1580,10 @@ below apply however you build. Implement it via the path chosen up front (see
   `@client`/`@server` trust boundaries. It is CKKS-only. See
   `references/implementing-with-nb-dsl.md`.
 
-Both paths produce the same four-program structure and must satisfy the deliverable
-contract in this stage (`run_test`, the client/server demo, client-side bounds
-enforcement, twin validation). A BFV/BGV design uses the OpenFHE path.
+Both paths produce the same four-program structure, target the Niobium Fog, and must
+satisfy the deliverable contract in this stage (`run_test`, the client/server demo,
+client-side bounds enforcement, twin validation). They differ only in how the program
+is authored.
 
 **Build in the current working directory by default.** Generate the application
 in your current working directory unless the user explicitly directs otherwise.
