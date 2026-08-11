@@ -320,8 +320,10 @@ C++ toolchain, add niobium-client (a submodule of the project by default, or an
 existing/standalone checkout), run `make sync-fhetch && make release &&
 make install-release && make install-cli` (fhetch only, no haze, matching the image), export
 `NIOBIUM_CLIENT_DIR` to the checkout, and run `make test-release` natively. The
-generated run harness reads `NIOBIUM_CLIENT_DIR` and runs every command on the
-host instead of in the container, so nothing downstream changes.
+generated `run.sh` then runs every command on the host instead of in the container,
+so nothing downstream changes. It records the chosen path as its default and takes
+`--container` / `--local` to override that per call, which is how one app exercises
+both paths on a machine that has both.
 
 **Determine your execution mode at this step — probe, don't assume.** Try to run
 the smoke test in *your own shell*. Two outcomes:
@@ -1726,7 +1728,7 @@ it is the artifact that most convincingly communicates the shape of an FHE
 solution to stakeholders. Treat it as part of the deliverable, not an optional
 extra. Write the demo glue in Python: a small stdlib `http.server` wrapper
 around the binaries handles the HTTP transport, byte-count logging, and the
-configurable server URL cleanly. `run_test.sh` and `run-in-container.sh` stay
+configurable server URL cleanly. `run_test.sh` and `run.sh` stay
 shell (they orchestrate processes).
 
 **Testing and debugging:**
@@ -1900,8 +1902,8 @@ so it is a faithful local rehearsal of the deployed run. `--sim-full` records **
 math** and adds the ring-level ciphertext-identity check:
 
 ```bash
-./run-in-container.sh "./run_test.sh --sim"        # hollow record -> fhetch_sim -> compare vs twin
-./run-in-container.sh "./run_test.sh --sim-full"   # real record + ring-level identity check
+./run.sh "./run_test.sh --sim"        # hollow record -> fhetch_sim -> compare vs twin
+./run.sh "./run_test.sh --sim-full"   # real record + ring-level identity check
 ```
 
 - **To the same bar.** The session writes the `.fhetch` trace and the simulator
@@ -1947,7 +1949,7 @@ wrapper mounts `~/.fog` when present, so once you have a key it just works:
 # once — mint a key (interactive):
 docker run --rm -it -v "$HOME/.fog":/root/.fog ghcr.io/niobiuminc/fhe-dev:latest fog login
 # deploy to the Fog (the default — no flag); the server step runs under `fog submit`:
-./run-in-container.sh "./run_test.sh"
+./run.sh "./run_test.sh"
 ```
 
 **For the full how-to:** Read `references/niobium-client-fog-variant.md` (layout,
@@ -1967,7 +1969,7 @@ self-contained and can be read independently.
 | `references/explaining-fhe-to-newcomers.md` | All stages, when the user is new to FHE: how to explain terms, tradeoffs, parties, and results in plain, functional terms |
 | `references/fhe-scheme-selection.md` | Stage 4: choosing between CKKS, BFV, and BGV |
 | `references/building-your-first-fhe-application.md` | Stages 3, 6, 8: the development checklist from plaintext through implementation |
-| `references/run-harness.md` | Stages 8, 10: the generated run scaffold (run-in-container.sh, run_test.sh with its four run modes, metrics, and env vars, the Makefile clean target) and how to document the run end to end in the README (Stage 9) |
+| `references/run-harness.md` | Stages 8, 10: the generated run scaffold (run.sh, run_test.sh with its four run modes, metrics, and env vars, the Makefile clean target) and how to document the run end to end in the README (Stage 9) |
 | `references/implementing-with-openfhe.md` | Stage 8 (OpenFHE path): the OpenFHE C++ build mechanics — CMake/linking, context features and serialization, the shared `run_circuit` |
 | `references/implementing-with-nb-dsl.md` | Stage 8 (DSL path): implementing the design in the `nb` FHE DSL (niobium-client) — stage-to-construct mapping, the deliverable contract in DSL form, workflow, pitfalls, limitations |
 | `references/niobium-client-fog-variant.md` | Stage 10: running the niobium-client Fog deployment (`app/`) of a validated OpenFHE app (`app/` layout, the `niobium::compiler()` recording pattern, the in-container build, simulation verification, trace submission) |

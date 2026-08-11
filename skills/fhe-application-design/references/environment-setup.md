@@ -206,7 +206,7 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && exec $SHELL
 ### 3. Point the skill at the checkout
 
 Export `NIOBIUM_CLIENT_DIR` to the checkout's absolute path. The generated
-`run-in-container.sh` reads it and runs the build and every run mode directly on
+`run.sh` reads it and runs the build and every run mode directly on
 the host instead of in a container, and the build's `CMAKE_PREFIX_PATH` resolves
 against it:
 
@@ -254,18 +254,19 @@ g++ -O2 -std=c++17 "$SKILL_ENV/boot_lab.cpp" -o ~/.local/bin/fhe-boot-lab \
 ## How the build environment is used later (Stages 8 and 10)
 
 You do not need to memorize any of this — at Stage 8 Claude writes the source
-into your project folder along with a `run-in-container.sh` wrapper and a
+into your project folder along with a `run.sh` wrapper and a
 `run_test.sh`, so the commands stay short. They look like:
 
 ```bash
-./run-in-container.sh "cmake -S . -B build -DCMAKE_PREFIX_PATH='...' && cmake --build build -j"
-./run-in-container.sh "./run_test.sh"          # no flag -> the Fog; --sim / --cpu validate locally
+./run.sh "cmake -S . -B build -DCMAKE_PREFIX_PATH='...' && cmake --build build -j"
+./run.sh "./run_test.sh"          # no flag -> the Fog; --sim / --cpu validate locally
 ```
 
 In Path A the wrapper mounts your project folder into the container at `/work`
 (and `~/.fog` when present), so the build sees Claude's source and its outputs
 land back in your folder. In Path B the same wrapper runs the same commands in
-place on the host (it reads `NIOBIUM_CLIENT_DIR` and skips the container), so the
+place on the host (its `MODE_DEFAULT`, `--local`, or an exported `NIOBIUM_CLIENT_DIR`
+selects the host and skips the container), so the
 call sites above do not change. Claude then reads those outputs and iterates.
 Because the twin was already validated in Stage 7, this loop should converge in
 only a few iterations.
@@ -336,8 +337,10 @@ Path B (local build):
   TLS the build finishes but `fog submit` cannot reach the Niobium Fog.
 - **`fog: command not found`** — `~/.local/bin` is not on PATH; add it (step 2)
   or re-run `make install-cli` with a `CLI_PREFIX=` that is.
-- **`run-in-container.sh` still uses Docker** — `NIOBIUM_CLIENT_DIR` is not
-  exported in the shell running it; export it to the checkout's absolute path.
+- **`run.sh` still uses Docker** — the app was generated with `MODE_DEFAULT=container`
+  and `NIOBIUM_CLIENT_DIR` is not exported in the shell running it. Export it to the
+  checkout's absolute path, pass `--local` for a single call, or set `MODE_DEFAULT=local`
+  in the script to change the app's default.
 - **The app build cannot find NiobiumFhetch or OpenFHE** — `make release` has not
   installed under `<checkout>/vendor/lib/`, or `NIOBIUM_CLIENT_DIR` points at the
   wrong directory; confirm both, then rebuild.

@@ -71,7 +71,7 @@ follows; produce all of them.
   vectors, so enforce the Stage-5 bounds decision (reject or winsorize) in the
   `harness/` before `encrypt()`, and commit the bounds file; an out-of-domain input
   must be clipped or rejected there, never silently encrypted.
-- **`run_test` and the run harness.** Generate the same `run-in-container.sh`,
+- **`run_test` and the run harness.** Generate the same `run.sh`,
   `run_test.sh` (the four modes with the Fog as the default target), and `Makefile`
   described in `run-harness.md`. The pass criterion is unchanged: encrypted output
   against the harness's faithful twin (Stage 7, polynomial activations) within the

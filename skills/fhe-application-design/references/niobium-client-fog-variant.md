@@ -26,7 +26,7 @@ The whole app is one directory in the **application repo**:
 <app>/
 ├── app/          # the four programs (keygen/encrypt/server/decrypt) + common.hpp
 ├── data/         # model, inputs, and the twin/reference ledgers
-└── run_test.sh   run-in-container.sh   Makefile   README.md
+└── run_test.sh   run.sh   Makefile   README.md
 ```
 
 Keep the source in your repo; the FHE-dev container is only a build-and-run
@@ -144,14 +144,14 @@ caveats below state).
 ## Build and run
 
 The app builds against the SDK via `find_package(NiobiumFhetch)` and runs through
-the generated `run-in-container.sh` wrapper and `run_test.sh`, whether the SDK
+the generated `run.sh` wrapper and `run_test.sh`, whether the SDK
 comes from the FHE-dev image or a local niobium-client build (see
 [environment-setup.md](environment-setup.md) for the two provisioning paths). See
 [run-harness.md](run-harness.md) for the scripts, the build command, the three run
 modes, and the `RINGCHK` / `FOG_TARGET` / `NREC` knobs. The SDK is one coherent
 build, so the instrumented OpenFHE and `libnbfhetch` versions always match. Before
 deploying to the Fog, run the required local validation,
-`./run-in-container.sh "./run_test.sh --sim"`, which generates the trace, runs it
+`./run.sh "./run_test.sh --sim"`, which generates the trace, runs it
 through `fhetch_sim`, and compares the result against the twin.
 
 **Deploying to the Fog (the default).** The default (Fog) mode dispatches the trace to
@@ -164,7 +164,7 @@ directly); the bare `run_test.sh` (no flag) runs the server step under `fog subm
 
 ```bash
 docker run --rm -it -v "$HOME/.fog":/root/.fog ghcr.io/niobiuminc/fhe-dev:latest fog login
-./run-in-container.sh "./run_test.sh"
+./run.sh "./run_test.sh"
 ```
 
 **Non-negotiable: the default mode must actually submit.** When a key is present,
