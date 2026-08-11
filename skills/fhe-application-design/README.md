@@ -132,7 +132,9 @@ The `evals/` directory contains five scenarios (credit scoring, credential searc
 
 ## Version History
 
-**v0.13.0 (current)** — Extends the methodology to eleven stages (Stages 0–10), carrying a design through implementation to a Niobium Fog deployment. The eval suite is now five scenarios (`evals/evals.json`), each pairing a prompt with an `expected_output` narrative.
+**v0.14.0 (current)** — Stage 0 gains a second way to provision the build-and-run environment: a local niobium-client source build on the host, alongside the FHE-dev image. One mode-aware run harness (keyed on `NIOBIUM_CLIENT_DIR`) drives both, so the build and run commands are identical whether the SDK comes from the image or a local checkout. The FHE-dev image is published for both `linux/amd64` and `linux/arm64`, so Apple Silicon hosts run it natively.
+
+**v0.13.0** — Extends the methodology to eleven stages (Stages 0–10), carrying a design through implementation to a Niobium Fog deployment. The eval suite is now five scenarios (`evals/evals.json`), each pairing a prompt with an `expected_output` narrative.
 
 Changes across iterations:
 
@@ -141,6 +143,7 @@ Changes across iterations:
 - **Iteration 3:** Added output integrity via transciphering (Stage 1 Question 5, Stage 5 transciphering section, Stage 8 protocol item). Addresses the protocol flaw where a decryptor can misrepresent results to the consumer.
 - **Iteration 4:** Refined to dual-output transciphering pattern (decryptor sees result AND passes opaque symmetric ciphertext to consumer). Added honest SIMD assessment distinguishing task-level concurrency from SIMD parallelism. Added ciphertext/key size estimation formulas to Stage 6. Restructured the implementation stage around four separate programs (keygen, encrypt, server, decrypt) plus a test runner.
 - **Iteration 5:** Extended the flow to eleven stages (Stages 0–10). Stage 0 now builds the FHE-dev container from the skill's own `environment/Dockerfile` (Niobium's instrumented OpenFHE fork + `libnbfhetch`, compiled from source on first build) instead of pulling a prebuilt image. Stage 8 splits into parallel OpenFHE C++ and Niobium `nb` DSL implementation references over a shared run harness. Added Stage 10 (Fog deployment): run the app in its default Fog mode to generate an FHETCH trace, validate it through the local simulator against the twin, and optionally submit it to the Niobium Fog. Added an FHE-for-newcomers explainer and a standalone environment-setup reference, and grew the eval suite to five scenarios (adding two niobium-client implementation cases).
+- **Iteration 6:** Added a second Stage 0 provisioning path (a local niobium-client source build on the host, alongside the FHE-dev image), selected by `NIOBIUM_CLIENT_DIR`, with one generated `run-in-container.sh` that runs commands on the host or in the image behind a single interface. Made the run harness path-aware for both the OpenFHE and `nb` DSL implementations (per-path build commands, the DSL stage-binary interface, a batched-vs-per-record `run_test` variant), let an app vendor the client as a committed submodule or reuse a shared checkout, and published the FHE-dev image for `linux/amd64` and `linux/arm64` so Apple Silicon hosts run it natively. Hardened the flow through a test-driven loop of clean-room builds: the local build installs `NiobiumFhetchConfig.cmake` for `find_package`, the container wrapper forwards run knobs and is safe under bash 3.2, `--sim-full` gets its own run directory, peak RSS is read via `getrusage`, and the DSL path documents its `nbc` module invocation, local-replay routing, and codegen pitfalls.
 
 ## Maintainer Notes
 

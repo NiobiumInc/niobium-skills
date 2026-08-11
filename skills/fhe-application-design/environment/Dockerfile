@@ -13,13 +13,13 @@
 # GPU C API) is intentionally omitted.
 #
 # Build (from this directory):
-#   docker build -t ghcr.io/niobiuminc/fhe-dev:v0.13.0 .
-#   docker build --build-arg GIT_REF=<sha|branch|tag> -t ghcr.io/niobiuminc/fhe-dev:v0.13.0 .
-#   docker build --build-arg BUILD_JOBS=4 -t ghcr.io/niobiuminc/fhe-dev:v0.13.0 .   # more RAM
+#   docker build -t ghcr.io/niobiuminc/fhe-dev:latest .
+#   docker build --build-arg GIT_REF=<sha|branch|tag> -t ghcr.io/niobiuminc/fhe-dev:latest .
+#   docker build --build-arg BUILD_JOBS=4 -t ghcr.io/niobiuminc/fhe-dev:latest .   # more RAM
 #
 # Run (project bind-mounted at /work for app builds):
-#   docker run --rm ghcr.io/niobiuminc/fhe-dev:v0.13.0 make test-release        # smoke test
-#   docker run --rm -v "$PWD":/work -w /work ghcr.io/niobiuminc/fhe-dev:v0.13.0 <cmd>
+#   docker run --rm ghcr.io/niobiuminc/fhe-dev:latest make test-release        # smoke test
+#   docker run --rm -v "$PWD":/work -w /work ghcr.io/niobiuminc/fhe-dev:latest <cmd>
 
 ARG UBUNTU_VERSION=24.04
 FROM ubuntu:${UBUNTU_VERSION} AS base

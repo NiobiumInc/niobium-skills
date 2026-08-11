@@ -1,34 +1,108 @@
-# The generated run harness (container wrapper, run_test, Makefile, .gitignore)
+# The generated run harness (run wrapper, run_test, Makefile, .gitignore)
 
 Three small files sit at the top of the application directory and keep every
 build-and-run command short, and a generated `.gitignore` keeps the working tree
 clean. They are generated in Stage 8 and used through Stage 10. Build and run happen
-inside the FHE-dev container; only `clean` runs on the host.
+in the build environment the wrapper selects, in the FHE-dev container or on the
+host; only `clean` always runs on the host.
 
 Contents:
-- [run-in-container.sh](#run-in-containersh) — run any command inside the image
+- [run.sh](#runsh) — run any command in the build environment, container or host
 - [run_test.sh](#run_testsh) — the keygen → encrypt → server → decrypt pipeline, four modes
 - [Makefile](#makefile) — the clean target
 - [.gitignore](#gitignore) — ignore the build tree and per-run artifacts
 - [Build and validate](#build-and-validate) — the first build and CPU run
 
-## run-in-container.sh
+## run.sh
 
-Runs a command in the FHE-dev image with the project mounted at `/work` (and
-`~/.fog` when present, so the Fog mode sees the API key):
+Runs a command against the FHE build-and-run environment. One name and one call
+site, two provisioning modes, either of which can be named explicitly:
+
+- **Container mode.** The command runs inside the FHE-dev image with the project
+  mounted at `/work` (and `~/.fog` when present, so the Fog path sees the API key).
+  Nothing but Docker is needed on the host. Select it with `--container`.
+- **Local mode.** The command runs directly on the host against a built
+  niobium-client checkout, which supplies the toolchain, the `fog` CLI, and the `nbc`
+  compiler, so no Docker is involved. Select it with `--local`, and point
+  `NIOBIUM_CLIENT_DIR` at the checkout. See `references/environment-setup.md` Path B
+  for how to produce it.
+
+**Set `MODE_DEFAULT` to the path the user chose at Stage 0**, so the app's ordinary
+invocation is a bare `./run.sh "<command>"` with no flag and no env var to remember.
+The flags exist for the case where a machine can do both: a developer with Docker and
+a local build can run either side without editing anything, which is how you confirm
+that a result reproduces across provisioning paths. Precedence, in order: an explicit
+flag wins; otherwise `NIOBIUM_CLIENT_DIR` being set selects local; otherwise
+`MODE_DEFAULT` decides.
 
 ```bash
 #!/usr/bin/env bash
+# Runs a command in the build-and-run environment: inside the FHE-dev image, or on
+# the host against a local niobium-client build. MODE_DEFAULT is the path chosen when
+# this app was generated; --container / --local override it per invocation.
 set -euo pipefail
-IMAGE="${FHE_DEV_IMAGE:-ghcr.io/niobiuminc/fhe-dev:v0.13.0}"
+MODE_DEFAULT=container          # or: local  (set to the path chosen at Stage 0)
+# For a submoduled client, default the checkout to the in-repo path so --local needs
+# no env var: NIOBIUM_CLIENT_DIR="${NIOBIUM_CLIENT_DIR:-$PWD/niobium-client}"
+
+usage() {   # $1 = the mode this call would use; list the invocations and both flags
+    cat <<EOF
+Usage: ./run.sh [--container|--local] "<command>"
+Active mode for this call: $1
+...
+EOF
+}
+
+MODE=""; HELP=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --container) MODE=container; shift ;;
+        --local)     MODE=local;     shift ;;
+        -h|--help)   HELP=1;         shift ;;
+        *) break ;;                                            # the rest is the command
+    esac
+done
+# Resolve: an explicit flag wins, else an exported checkout means local, else the default.
+if [ -z "$MODE" ]; then
+    [ -n "${NIOBIUM_CLIENT_DIR:-}" ] && MODE=local || MODE="$MODE_DEFAULT"
+fi
+if [ "$HELP" = 1 ] || [ $# -eq 0 ]; then usage "$MODE"; exit 0; fi
+
+if [ "$MODE" = local ]; then
+    [ -n "${NIOBIUM_CLIENT_DIR:-}" ] || {
+        echo "Local mode needs NIOBIUM_CLIENT_DIR set to a built niobium-client checkout." >&2
+        echo "Build one per environment-setup.md Path B, or use --container." >&2
+        exit 1; }
+    exec bash -c "$*"                                          # run in place; inherits the shell env
+fi
+command -v docker >/dev/null || {
+    echo "Container mode needs Docker. Install it, or use --local with a built checkout." >&2
+    exit 1; }
+IMAGE="${FHE_DEV_IMAGE:-ghcr.io/niobiuminc/fhe-dev:latest}"   # tracks the current image; for a reproducible app pin a version: FHE_DEV_IMAGE=ghcr.io/niobiuminc/fhe-dev:vX.Y.Z
 FOG=(); [ -d "$HOME/.fog" ] && FOG=(-v "$HOME/.fog:/root/.fog")
-exec docker run --rm -v "$PWD":/work -w /work "${FOG[@]}" "$IMAGE" bash -c "$*"
+# Forward the run knobs from the host env so `RING_DIM=… ./run.sh "…"` behaves the
+# same in the container as it does in local mode (docker does not inherit the
+# caller's environment). Only knobs actually set are passed.
+ENVFWD=(); for v in RING_DIM RINGCHK RECORD NREC N_ENC FOG_TARGET; do [ -n "${!v:-}" ] && ENVFWD+=(-e "$v"); done
+# ${arr[@]+"${arr[@]}"} guards empty-array expansion under `set -u` on bash 3.2
+# (macOS default), which otherwise aborts with "unbound variable".
+exec docker run --rm -v "$PWD":/work -w /work ${FOG[@]+"${FOG[@]}"} ${ENVFWD[@]+"${ENVFWD[@]}"} "$IMAGE" bash -c "$*"
 ```
 
-Give it a `--help` (and bare no-arg) path that prints the common invocations:
-`./run_test.sh`, `./run_test.sh --cpu`, `./run_test.sh --sim`, `./run_test.sh
---help`, plus the build command, so a user finds the modes without opening the
-file.
+In local mode the app runs in place, so the `fog` CLI and `nbc` must already be on
+`PATH` (Path B installs `fog` to `~/.local/bin` and invokes `nbc` from the
+checkout). In container mode they ship in the image. Host env knobs
+(`RING_DIM`/`RINGCHK`/`RECORD`/`NREC`/`N_ENC`/`FOG_TARGET`) reach the program in both modes:
+local mode inherits the shell env, and container mode forwards them with `-e` (an
+app-specific knob not in that list must be set inside the quoted command,
+`./run.sh "FOO=bar ./run_test.sh"`). Neither mode changes the commands below.
+
+The `usage` function (printed for `--help` and for a bare no-arg call) lists the
+common invocations: `./run_test.sh`, `./run_test.sh --cpu`, `./run_test.sh --sim`,
+`./run_test.sh --help`, plus the build command. It also **names the mode that is
+active for this call and why** (the flag, the exported checkout, or the generated
+default), and lists `--container` / `--local`, so a user finds both paths without
+opening the file.
 
 ## run_test.sh
 
@@ -86,15 +160,37 @@ Provide `-h`/`--help` listing the four modes and the env knobs:
   deliberately small ring (e.g. 2^15, or a toy 2^10) fast. It is never forwarded
   to a Fog run: the Fog runs exactly N = 2^16 and its ring-dim guard is always on,
   so a non-2^16 ring cannot reach the Fog.
-- `NREC` sets how many records to score (a small default for `--sim` and the Fog,
-  a larger one for `--cpu`).
+- `NREC` sets how many records to score. **Default it to the deployment's unit of
+  work, not to the sample size the fidelity gate wants.** For `per_record` packing
+  that is ONE record, selected by a `RECORD`-style index so the run reads as
+  "score mine"; for `batched` it is one batch. `NREC` above that default is a
+  **validation sweep**, opt-in and labelled as such in the output, which is the
+  only thing the multi-record loop is for: giving the FHE-vs-twin gate more
+  samples.
+- **The default run must match the Stage 1 security model**, whatever that model
+  is: one encryptor per record, or a single encryptor owning a whole batch. A
+  validation sweep may take shortcuts the deployment would not, reusing one key
+  set across records being the usual one, so that measuring quality over many
+  inputs stays fast. Label the shortcut in the output so the sweep is not read as
+  the deployment shape. This applies to every entry point that runs the
+  application, `run_test.sh` and the two-process demo alike: a demo scoring several
+  records under one key misrepresents the protocol exactly as the run script would.
+- **Keep the per-request result separate from offline model quality.** The run
+  should lead with what the deployed system returns for the record it scored, then
+  report population metrics separately, labelled as computed in the clear over a
+  labeled set. Printing only aggregates makes an encrypted single-record protocol
+  read as a group analysis, and makes plaintext validation numbers look like
+  output of the encrypted run.
 
 Generate `run_test.sh` from the skeleton below. Keep the unbracketed lines as
 they are, in particular the mode parsing, the home provisioning, the negative
 test, the key preflight, and the `fog submit` dispatch; fill the `<...>`
-placeholders and the three report blocks for the application. Adapt step 5 to the
-packing mode (per-record shown; a batched design encrypts once and runs the
-server once).
+placeholders and the three report blocks for the application. Step 5 below is
+written for **per-record** packing (the `for` loop over `NREC`). For a **batched**
+design (column-major, records across slots, which the single-encryptor case in
+SKILL.md recommends) swap step 5 for the batched form in "Batched step 5" below —
+one `encrypt`, one server run, one decrypt over the batch — and keep everything
+else (home provisioning, negative test, key preflight, dispatch, reporting) as is.
 
 ```bash
 #!/usr/bin/env bash
@@ -112,7 +208,8 @@ Usage: ./run_test.sh [--cpu | --sim | --sim-full | -h]
               (compare --sim and --sim-full to surface any hollow-recording divergence)
 Env: FOG_TARGET (default FOG; FUNC_SIM = hardware-free simulator)
      RINGCHK   (set to --no-ring-dim-check only for a deliberately small ring)
-     NREC      records to score
+     RECORD    which record to score (default 0)
+     NREC      validation-sweep size (default 1)
 EOF
 }
 
@@ -137,12 +234,15 @@ case "$MODE" in
   fog) HOLLOW_FLAG="--hollow";;
   sim) [ "$SIMFULL" = 1 ] || HOLLOW_FLAG="--hollow";;
 esac
-case "$MODE" in                   # trace modes are heavier per record than plain CPU
-  cpu) NREC="${NREC:-<n_cpu>}";; sim) NREC="${NREC:-<n_sim>}";; fog) NREC="${NREC:-<n_fog>}";;
-esac
+# The deployment's unit of work is the default: one record for per_record packing,
+# one batch for batched. NREC above it is an opt-in validation sweep.
+RECORD="${RECORD:-0}"             # which record to score
+NREC="${NREC:-1}"
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-BUILD="$ROOT/build"; RUN="$ROOT/run_${MODE}"
+# --sim and --sim-full get separate run dirs so the sim-vs-sim-full cross-check
+# compares two independent runs instead of clobbering one (both set MODE=sim).
+BUILD="$ROOT/build"; RUN="$ROOT/run_${MODE}"; [ "$SIMFULL" = 1 ] && RUN="$ROOT/run_sim-full"
 CLIENT="$RUN/client_home"; SERVER="$RUN/server_home"
 # Clear the per-run home AND the FHETCH trace cache each run, so --sim-full records
 # real math (for its ring-level identity check) instead of reusing a hollow --sim trace.
@@ -186,6 +286,10 @@ for ((i=0; i<NREC; i++)); do
     # --sim passes --hollow (server records hollow, skips its ring-level check);
     # --sim-full omits it (real record, so the server's ring-level check runs).
     "$BUILD/<app>_server" "$SERVER" $FLAG $HOLLOW_FLAG $RINGCHK   # wrap to capture wall-clock + peak RSS
+    # For peak RSS, wrap the server in a small Python parent that reads
+    # resource.getrusage(RUSAGE_CHILDREN).ru_maxrss (portable, needs no packages,
+    # and works in the image — /usr/bin/time is not installed there). ru_maxrss is
+    # bytes on macOS, kilobytes on Linux; label the unit accordingly.
   fi
   cp "$SERVER/ct_result.bin" "$CLIENT/ct_result_$i.bin"
   "$BUILD/<app>_decrypt" "$CLIENT" "$CLIENT/ct_result_$i.bin" >> "$RUN/decrypted.csv"
@@ -202,15 +306,86 @@ done
 <profile block>
 ```
 
+### Batched step 5 (single-encryptor, column-major — the recommended default)
+
+Step 5 above is the **per-record** form. For a single-encryptor design that packs
+records across slots (SKILL.md's recommended packing for that case), replace the
+`for` loop with **one** encrypt, **one** server run, and **one** decrypt over the
+whole batch. `NREC` is then the number of records packed into the batch (≤ the slot
+count), not a loop count. Steps 1–4 and 6 are unchanged, and the server branch
+(Fog / `--sim` / `--sim-full` / `--cpu`, with `$HOLLOW_FLAG` / `$RINGCHK` and the
+peak-RSS wrap) is identical to the loop version — only the encrypt and decrypt
+around it change:
+
+```bash
+# 5 (batched). encrypt once -> one ciphertext per feature column (bounds enforced in <app>_encrypt)
+"$BUILD/<app>_encrypt" "$CLIENT" <input args>          # writes $CLIENT/ct_x_f0.bin ... ct_x_fK.bin
+cp "$CLIENT"/ct_x_f*.bin "$SERVER/"                     # only ciphertext crosses
+if [ "$MODE" = "fog" ]; then
+  fog submit "$BUILD/<app>_server" "$SERVER" $HOLLOW_FLAG --target="$FOG_TARGET"
+else
+  "$BUILD/<app>_server" "$SERVER" $FLAG $HOLLOW_FLAG $RINGCHK   # wrap for wall-clock + peak RSS (rusage, as above)
+fi
+cp "$SERVER"/ct_result*.bin "$CLIENT/"                 # one result ciphertext (or a few, e.g. per class)
+"$BUILD/<app>_decrypt" "$CLIENT" > "$RUN/decrypted.csv" # decrypt unpacks all NREC records' outputs at once
+```
+
+Choose per-record only when the design genuinely encrypts one record at a time
+(e.g. independent encryptors, or a per-record request/response shape); the batched
+form is the default for the single-encryptor full-book case.
+
+### On the DSL path
+
+The skeleton above uses the OpenFHE-path binary interface
+(`"$BUILD/<app>_keygen" "$CLIENT"`). Generated DSL binaries differ; keep the
+skeleton's structure (the four modes, the two homes, the negative test, the
+reporting order) and change:
+
+- **Binary interface: a profile index plus the working directory, not a home
+  argument.** Each generated `@stage("name")` binary takes the profile index as
+  `argv[1]` and reads/writes relative to the current directory (`root()` is the
+  process CWD). Provision each home and `cd` into it before running the stage:
+  `(cd "$SERVER" && "$BUILD/<stage-name>" "$PROFILE")`, with `BUILD=nb_out/build`.
+  The binaries are named for their `@stage`s (`key_generation`, `encrypt_...`, the
+  server-compute stage, `decrypt_...`), not
+  `<app>_keygen`/`_encrypt`/`_server`/`_decrypt`.
+- **Sim modes need two server invocations; `--cpu` also records a trace.** The
+  generated `@hardware` server replays only on a cache-valid run: a first `--sim` /
+  `--sim-full` invocation records the trace and stops, serializing a placeholder, and
+  only a second invocation calls `replay()` and reconstructs the real values. Clear
+  the trace cache once at the top, then invoke the server **twice** for the sim modes
+  (a single invocation decrypts garbage). `--cpu` computes real math in one pass but
+  still records, so a `<stage>_workload_*` dir and a `.fhetch` file appear under
+  `--cpu` too — cover them in `.gitignore` and the Makefile `clean`.
+- **Negative test: assert key absence, don't expect the server to refuse.** The
+  generated `@server` binary has no runtime secret-key guard (the compile-time
+  `@server` / `SecretKey` split is the guarantee), so `run_test` asserts there is no
+  `sk.bin` in the server home before launching, rather than planting one and
+  expecting a nonzero exit.
+- **Server key set and local-replay routing.** Provision `cc`/`pk`/`mk`/`rk` into
+  the server home: the generated `@server` hard-requires `rk.bin`
+  (EvalSum/automorphism keys) and aborts with "Failed to load EvalAutomorphism key"
+  without it, even for a rotation-free circuit (the non-minimal-keygen pitfall in
+  `implementing-with-nb-dsl.md`). Local `--sim`/`--sim-full` replay is routed by
+  `NBCC_FHETCH_DRIVER`
+  (`$NIOBIUM_CLIENT_DIR/vendor/niobium-fhetch/build/tests/fhetch_driver/fhetch_driver`)
+  plus `LD_LIBRARY_PATH` (and `DYLD_LIBRARY_PATH` on macOS).
+- **Small-ring local testing.** The `@hardware` record path enforces the N = 2^16
+  hardware floor and aborts a deliberately small local ring ("Ring dimension … not
+  compatible with Niobium Hardware") unless `--no-ring-dim-check` is passed to the
+  stage binary — forward `$RINGCHK` to the DSL server for local `--cpu`/`--sim` as
+  the OpenFHE skeleton does. Set the small ring itself via a `ring_dim` field on the
+  `Instance` struct (a literal `ring_dim` in the `scheme` block fixes it for all
+  profiles; `scheme.override(ring_dim:)` is a no-op).
+
 ## Makefile
 
 A `clean` target that removes everything a build or a run regenerates: the
-`build/` tree, the per-run homes (the `run_cpu/` / `run_sim/` / `run_fog/` dirs and
+`build/` tree, the per-run homes (`run_*/`, including the two-process demo's, plus
 any root `client_home/` / `server_home/`), and the `*_server_workload_*/` FHETCH
-trace directories. **List the run-home directories explicitly; never `rm -rf run_*`**,
-because that glob also matches `run_test.sh` and deletes the orchestrator (the same
-trap catches any generated script whose name a clean glob can hit). Keep these paths
-in sync with what the scripts create and with the `.gitignore` below.
+trace directories. **Match run homes with `run_*/`, never bare `run_*`**: the
+trailing slash matches directories only, so it cannot delete `run_test.sh`. Keep
+these paths in sync with the `.gitignore` below.
 
 ## .gitignore
 
@@ -232,45 +407,73 @@ numbers forward; a run does not write to them.
 
 ```gitignore
 # Generated by the Niobium FHE Application Design AI Assistant (FHEanna).
-# Build tree
-/build/                       # OpenFHE path
-/nb_out/build/                # DSL path (keep the generated nb_out sources)
-# Per-run homes provisioned by run_test.sh (keys, ciphertexts)
-/run_cpu/
-/run_sim/
-/run_sim-full/
-/run_fog/
+# Build tree (OpenFHE path)
+/build/
+# Build tree (DSL path: keep the generated nb_out sources, ignore its build/)
+/nb_out/build/
+# Per-run homes provisioned by run_test.sh and the two-process demo (keys, ciphertexts).
+# Directory-only glob: covers every run mode, and cannot match run_test.sh.
+/run_*/
 client_home/
 server_home/
 # Local tooling that must never be committed
+.claude/
+.agents/
 .venv/
 __pycache__/
+# Toolchain replay artifacts
+/nbcc_fhetch_replay_source_*/
+/fhetch_driver_source_*/
 # App-specific: name this application's trace and profile directories
 /<app>_server_workload_*/
 /<app>_profile_*/
-/fhetch_driver_source_*/
 ```
 
 ## Build and validate
 
-Build once, then validate locally on CPU, both through the wrapper:
+Build once, then validate locally on CPU, both through the wrapper. `NC` is the
+built niobium-client: `/opt/niobium-client` inside the image, or the local checkout
+in `NIOBIUM_CLIENT_DIR` (the default covers the image, and the layout under it is
+identical either way). The build command depends on the implementation path.
+
+**OpenFHE path** — the app's own `CMakeLists.txt` finds the SDK with
+`find_package(NiobiumFhetch)` off `CMAKE_PREFIX_PATH`:
 
 ```bash
-./run-in-container.sh "cmake -S . -B build \
-    -DCMAKE_PREFIX_PATH='/opt/niobium-client/vendor/lib/niobium-client;/opt/niobium-client/vendor/lib/openfhe' \
+NC="${NIOBIUM_CLIENT_DIR:-/opt/niobium-client}"
+./run.sh "cmake -S . -B build \
+    -DCMAKE_PREFIX_PATH='$NC/vendor/lib/niobium-client;$NC/vendor/lib/openfhe' \
     && cmake --build build -j"
-./run-in-container.sh "./run_test.sh --cpu"
+./run.sh "./run_test.sh --cpu"
+```
+
+**DSL path** — build the generated `nb_out/` project, which locates the SDK via
+`NIOBIUM_CLIENT_ROOT` (it does not use `find_package` / `CMAKE_PREFIX_PATH`):
+
+```bash
+NC="${NIOBIUM_CLIENT_DIR:-/opt/niobium-client}"
+./run.sh "cmake -S nb_out -B nb_out/build -DNIOBIUM_CLIENT_ROOT='$NC' \
+    && cmake --build nb_out/build -j"
+./run.sh "./run_test.sh --cpu"
 ```
 
 ## Documenting the run in the README
 
-The application ships a run README that assumes only Docker on the host and takes a
-newcomer from a fresh clone to a run and back to a clean tree. Order it so the usage reads
-end to end: obtain the image, run, tear down. Beyond whatever the user asked for, it
-always includes:
+The application ships a run README that takes a newcomer from a fresh clone to a
+run and back to a clean tree. It assumes the FHE-dev image (Docker on the host)
+by default, or a local niobium-client build when the app was set up that way. Order it so the usage reads
+end to end: obtain the image, run, tear down. Keep it about the application, not the
+toolchain: per the attribution rule in SKILL.md, name the image, the `nb` DSL,
+OpenFHE, or the Fog only where it helps a reader run, modify, or debug the app, not
+as description or promotion. Beyond whatever the user asked for, it always includes:
 
-- **Obtain the FHE-dev image.** Pull the published image, or build it from
-  `environment/`.
+- **Obtain the build-and-run environment.** Either the FHE-dev image (pull the
+  published image, or build it from `environment/`), or a local niobium-client
+  build on the host (`references/environment-setup.md` Path B), whichever the app
+  was set up with. When the app is built locally, say so and record the
+  `NIOBIUM_CLIENT_DIR` the run expects. Name the mode `run.sh` defaults to, and note
+  that `--container` / `--local` select the other one, so a reader on a differently
+  equipped machine can run the app without editing it.
 - **Inputs and outputs.** Enumerate and describe the data the application consumes
   and produces, as a table the reader can map to the code: each input feature (name,
   meaning, unit, and expected range or the bounds the client enforces) and each
@@ -295,14 +498,15 @@ always includes:
   boundary sizes).
 - **Client/server deployment.** The two-process run and its two-host variant (copy
   the server home to untrusted infrastructure; the secret key never leaves the
-  client).
+  client). Say how many records it scores; like `run_test.sh` it defaults to the
+  deployment's unit of work.
 - **The error ledger, as a table.** Three rows: reference vs ground truth, twin vs
   reference, FHE vs twin. Attribute each residual to its actual source (model change,
   polynomial approximation, fixed-point quantization, encryption noise); do not fold
   quantization into the polynomial row.
 - **Cleanup.** A `make clean` command that removes the build tree and every per-run
-  artifact. State that `clean` lists its targets explicitly and never globs `run_*`,
-  so it cannot delete `run_test.sh`. The committed inputs under `data/` (and, on the
+  artifact. State that `clean` matches run homes with the directory-only glob
+  `run_*/`, so it cannot delete `run_test.sh`. The committed inputs under `data/` (and, on the
   DSL path, the `.niob` sources and the generated `nb_out/`) survive, so a later run
   does not regenerate them. The same artifacts are ignored by the `.gitignore` the app
   ships, so a run leaves the working tree clean.
