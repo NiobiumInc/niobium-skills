@@ -14,16 +14,31 @@ name: Publish FHE-dev image
 # (`ubuntu-24.04-arm`), which is free for public repos; private repos must enable
 # arm64 hosted runners for the org first.
 #
-# Fires on an image version tag (fhe-dev-v*), or manually via the Actions tab.
-# The `fhe-dev-` prefix keeps image releases separate from skill releases.
+# Fires three ways:
+#   - daily schedule: a REFRESH — when niobium-client main has moved since the
+#     last published image, rebuilds and re-points `:latest` AND the current
+#     version tag at the new build. Quiet days build nothing (gated on the
+#     `:client-<sha>` tag already existing).
+#   - an image version tag (fhe-dev-v*): a new version (`:vX.Y.Z`). The version
+#     names the CONTAINER RECIPE (Dockerfile/toolchain) — bump it when the
+#     recipe changes, not for client updates; refreshes keep the current
+#     version tag rolling with client main.
+#   - manual dispatch: with a tag input it is a new version; without one it is
+#     the same refresh the schedule runs.
+# Every published manifest also carries `:client-<sha>` naming the exact
+# niobium-client commit built in — plumbing for the refresh gate and for
+# debugging, not a tag users are expected to pull. The `fhe-dev-` prefix keeps
+# image releases separate from skill releases.
 on:
   push:
     tags: ["fhe-dev-v*"]
+  schedule:
+    - cron: "0 9 * * *"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Image version, e.g. v0.1.0"
-        required: true
+        description: "Image version, e.g. v0.1.0 (leave empty to refresh from client main)"
+        required: false
 
 concurrency:
   group: publish-fhe-dev-${{ github.ref }}
@@ -34,27 +49,71 @@ permissions:
   packages: write          # lets GITHUB_TOKEN push to the org's GHCR
 
 jobs:
-  # Resolve the image ref once so build and merge agree on it.
+  # Resolve the image ref and the niobium-client commit once so build and
+  # merge agree on both, and gate refresh runs on the client having moved.
   prep:
     runs-on: ubuntu-latest
     outputs:
       image: ${{ steps.ref.outputs.image }}
       version: ${{ steps.ref.outputs.version }}
+      client_sha: ${{ steps.ref.outputs.client_sha }}
+      client_tag: ${{ steps.ref.outputs.client_tag }}
+      skip: ${{ steps.ref.outputs.skip }}
     steps:
-      - name: Compute image ref
+      - name: Checkout (with tags, to resolve the current image version)
+        uses: actions/checkout@v4
+        with:
+          fetch-tags: true
+          fetch-depth: 0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image ref and gate on client movement
         id: ref
         run: |
           owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          version="${{ github.event.inputs.tag || github.ref_name }}"
-          version="${version#fhe-dev-}"          # fhe-dev-v0.1.0 -> v0.1.0
-          echo "image=ghcr.io/$owner/fhe-dev" >> "$GITHUB_OUTPUT"
+          image="ghcr.io/$owner/fhe-dev"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+          # The exact niobium-client commit this image will contain.
+          client_sha=$(git ls-remote https://github.com/NiobiumInc/niobium-client.git refs/heads/main | cut -f1)
+          short=${client_sha:0:12}
+          echo "client_sha=$client_sha" >> "$GITHUB_OUTPUT"
+          echo "client_tag=client-$short" >> "$GITHUB_OUTPUT"
+
+          case "${{ github.event_name }}" in
+            push)              version="${GITHUB_REF_NAME#fhe-dev-}" ;;  # fhe-dev-v0.1.0 -> v0.1.0
+            workflow_dispatch) version="${{ github.event.inputs.tag }}" ;;
+            *)                 version="" ;;
+          esac
+
+          skip=false
+          if [ -z "$version" ]; then
+            # Refresh: re-point the newest existing version tag (the current
+            # container recipe) and :latest at a build of the client tip, and
+            # only when this client commit isn't already published.
+            current=$(git tag --list 'fhe-dev-v*' --sort=-v:refname | head -1)
+            version="${current#fhe-dev-}"
+            [ -n "$version" ] || version="client-$short"   # no version tag yet
+            if docker manifest inspect "$image:client-$short" > /dev/null 2>&1; then
+              echo "client main unchanged ($short); nothing to publish"
+              skip=true
+            fi
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
 
   # One native build per architecture: build -> smoke test -> push a per-arch tag.
   # The per-arch tags (:<version>-amd64 / :<version>-arm64) are assembled into the
   # user-facing manifest lists by the `merge` job only after every arch passes.
   build:
     needs: prep
+    if: needs.prep.outputs.skip != 'true'
     strategy:
       fail-fast: true       # if one arch fails its smoke test, don't publish a half-built manifest
       matrix:
@@ -90,9 +149,12 @@ jobs:
 
       # Native single-arch build loaded into the local daemon (no emulation, no
       # buildx needed): docker build runs on the matching runner architecture.
+      # Pin the clone to the commit prep gated on, so the published tags name
+      # exactly what was built even if client main moves mid-run.
       - name: Build image (${{ matrix.arch }}, native)
         run: |
           docker build \
+            --build-arg GIT_REF="${{ needs.prep.outputs.client_sha }}" \
             -t "${{ needs.prep.outputs.image }}:${{ needs.prep.outputs.version }}-${{ matrix.arch }}" \
             skills/fhe-application-design/environment
 
@@ -113,6 +175,7 @@ jobs:
   # the user-facing tags. Only runs if BOTH arch builds+smoke tests passed.
   merge:
     needs: [prep, build]
+    if: needs.prep.outputs.skip != 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Log in to GHCR
@@ -126,10 +189,74 @@ jobs:
         run: |
           img="${{ needs.prep.outputs.image }}"
           ver="${{ needs.prep.outputs.version }}"
+          ctag="${{ needs.prep.outputs.client_tag }}"
           docker buildx imagetools create \
             -t "$img:$ver" \
+            -t "$img:$ctag" \
             -t "$img:latest" \
             "$img:$ver-amd64" \
             "$img:$ver-arm64"
-          echo "published multi-arch $img:$ver and $img:latest (amd64 + arm64)"
+          echo "published multi-arch $img:$ver, $img:$ctag, and $img:latest (amd64 + arm64)"
           docker buildx imagetools inspect "$img:$ver"
+
+      # Prune plumbing: keep the newest KEEP client-* versions and delete
+      # package versions nothing references anymore. Never touches a version
+      # carrying :latest or a version tag, and never a digest a retained
+      # manifest list still references (the per-arch children of kept
+      # multi-arch tags surface as "untagged" versions). Warn-only throughout:
+      # a prune failure never fails a publish.
+      - name: Prune stale client-* tags and orphaned versions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -u
+          KEEP=10
+          img="${{ needs.prep.outputs.image }}"
+          api="https://api.github.com/orgs/${{ github.repository_owner }}/packages/container/fhe-dev/versions"
+
+          # Every package version (id, digest in .name, tags, created_at).
+          versions=$(for p in 1 2 3 4 5 6 7 8 9 10; do
+            out=$(curl -sf -H "Authorization: Bearer $GH_TOKEN" \
+                       -H "Accept: application/vnd.github+json" \
+                       "$api?per_page=100&page=$p") || break
+            [ "$out" = "[]" ] && break
+            printf '%s' "$out"
+          done | jq -s 'add // []')
+          echo "package versions: $(echo "$versions" | jq 'length')"
+
+          # Tags that must keep working: every non-client tag, plus the
+          # newest KEEP client-* tags.
+          retained_tags=$(echo "$versions" | jq -r --argjson keep "$KEEP" '
+            [.[] | select((.metadata.container.tags | length) > 0)]
+            | (map(select(any(.metadata.container.tags[]; test("^client-") | not)))
+               + (map(select(all(.metadata.container.tags[]; test("^client-"))))
+                  | sort_by(.created_at) | reverse | .[:$keep]))
+            | [.[].metadata.container.tags[]] | unique | .[]')
+
+          # Child digests a retained manifest list pins; these look untagged.
+          protected=$(mktemp)
+          for t in $retained_tags; do
+            docker buildx imagetools inspect --raw "$img:$t" 2>/dev/null \
+              | jq -r '.manifests[]?.digest // empty' >> "$protected" || true
+          done
+          sort -u "$protected" -o "$protected"
+
+          # Delete: client-* versions beyond the newest KEEP, and untagged
+          # versions no retained manifest references.
+          echo "$versions" | jq -r --argjson keep "$KEEP" --rawfile prot "$protected" '
+            ($prot | split("\n") | map(select(length > 0))) as $protected
+            | (map(select((.metadata.container.tags | length) > 0
+                          and all(.metadata.container.tags[]; test("^client-"))))
+               | sort_by(.created_at) | reverse | .[$keep:] | .[].id),
+              (.[] | select((.metadata.container.tags | length) == 0
+                            and ((.name as $d | $protected | index($d)) | not))
+                   | .id)
+          ' | sort -u | while read -r id; do
+            [ -n "$id" ] || continue
+            if curl -sf -X DELETE -H "Authorization: Bearer $GH_TOKEN" \
+                 -H "Accept: application/vnd.github+json" "$api/$id" > /dev/null; then
+              echo "deleted version $id"
+            else
+              echo "warning: could not delete version $id (repo may need the Admin role on the package)"
+            fi
+          done
