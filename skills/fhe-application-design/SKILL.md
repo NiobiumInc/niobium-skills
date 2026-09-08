@@ -477,8 +477,8 @@ A Chebyshev (or Taylor) approximation is only valid *inside* its fit interval;
 outside that interval it does not merely lose accuracy, it diverges — by many
 orders of magnitude for a steep function like sigmoid. So before locking in the
 model, check that each non-linearity's approximation can be made both **safe**
-(bounded) and **accurate** within the depth budget. There are two distinct
-failure modes, and they have two different owners:
+(bounded) and **accurate** within the depth budget. There are three distinct
+failure modes, and they have different owners:
 
 - **Out-of-range (a design-side bug).** The approximation domain does not cover
   the operands that actually reach the function. The polynomial evaluates to
@@ -498,6 +498,34 @@ failure modes, and they have two different owners:
   records if that stays within budget, else **change the incoming model**.
   (Often the offending operands are rare outliers, and filtering them keeps a
   tight, accurate domain — see "Filter, don't force.")
+
+- **In-circuit noise drift (a robustness gap, not a design bug).** The domain
+  covers the *noiseless* operand range, but the operands that actually reach a
+  **mid-circuit** non-linearity have drifted by in-compute noise
+  (rescale/key-switch/bootstrap) that the cleartext twin and slot-sim never
+  show. The input-side fixes above cannot reach these operands — they are
+  generated *inside* the FHE evaluation, so there is nothing to filter or clip
+  at the client. A rare, data-dependent drift into a high-degree tail evaluates
+  as `cosh(deg·√2ε)` and overflows the scale — one escaped slot renders the
+  whole result ciphertext undecodable, with no decision flip to warn you. It is
+  invisible until the encrypted run, and localizing it costs a
+  checkpoint-bisection. Defend it two ways: **(1) size the domain margin from
+  measured in-compute noise, not the noiseless envelope** (sweep injected
+  per-refresh noise and take the operand envelope *under* it); and **(2) fit
+  the approximation with clamped, bounded tails** — least-squares a smooth
+  continuation of the function past `[lo, hi]` (clamp-to-edge for saturating
+  functions; the function's own extension where it has one) so that outside the
+  domain the polynomial *saturates* instead of diverging. For a deep internal
+  operand, clamping the approximation is the primary defense: prefer it over
+  hunting for an input-side knob that can reach a variable born mid-circuit —
+  there usually isn't one. Three caveats make this a real fit, not a one-liner:
+  the clamped strip **rings** (Gibbs) and the overshoot is raised to a power by
+  any downstream squaring, so cap the pad-region magnitude against the
+  bootstrap budget; scale the pad by degree (irrelevant at ≤deg-15, essential
+  at deg-63/127); and **keep it observable** — count operands that land in the
+  pad region and surface it, because a silently-absorbing clamp will *mask* a
+  genuinely mis-calibrated domain. Run **strict** (raise on escape) during
+  bring-up and calibration; run **robust** (clamp + telemetry) in production.
 
 Run the check like this, using the plaintext model and representative test set
 that Stage 3 requires:
@@ -577,7 +605,9 @@ Three field notes on rung c (from applying it in practice):
   bounded-by-construction training, cost it against the alternative: calibrate
   approximation domains on the pre-activation envelope over the *full* training
   set plus a safety margin, and document the residual escape risk (Stage 9)
-  with its packing-dependent blast radius and mitigation.
+  with its packing-dependent blast radius and mitigation. For non-linearities
+  deep in the circuit, this residual risk is not client-filterable — see the
+  in-circuit-noise-drift mode above, and prefer clamped-tail fits there.
 
 #### Filter, don't force: the two-threshold check and the composition guard
 
