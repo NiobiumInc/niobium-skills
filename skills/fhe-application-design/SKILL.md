@@ -1113,7 +1113,9 @@ choosing lower-degree polynomial approximations where precision permits.
 all match indicators), use rotate-and-sum: repeatedly rotate by powers of 2
 and add, collapsing N slots into one in log(N) steps. This consumes no
 multiplicative depth (rotations and additions are free in depth), but requires
-rotation keys for each power-of-2 shift.
+rotation keys for each power-of-2 shift. Free in *depth* is not free in
+*noise*, though — a wide rotate-and-sum still spends noise-margin bits; see
+*"Additive fan-in is a hidden noise cost"* under parameter selection.
 
 **Transciphering for output integrity.** If Stage 1 Question 5 identified an
 output integrity problem (the decryptor might misrepresent the result to the
@@ -1268,6 +1270,34 @@ encryption. This turns the two-speed loop's fast cleartext pass into a decode
 gate, so the expensive encrypted run is reserved for designs already predicted
 safe. Erring conservative is cheap: a falsely-"unsafe" verdict only adds depth,
 which is the correct move anyway.
+
+**Additive fan-in is a hidden noise cost — free in depth, not in budget.** The
+`noise_margin` term above is not a constant. Additions consume no *levels* (they
+drop no prime), but they sum their operands' noise, so a wide accumulation
+spends *noise-margin bits* the depth count never sees. Summing N ciphertexts of
+per-term noise ε grows the result to √N·ε when the terms are independent
+(**½·log₂N bits**) and up to N·ε when correlated (**log₂N bits**). A matmul or
+rotate-and-sum is the *correlated* case — the summands are rotations and
+plaintext-mults of the *same* ciphertext — so budget it at the **log₂N** end: a
+dense layer of width 768 costs ~10 noise-margin bits *per accumulation*, at zero
+levels. Fold the worst dataflow path's Σ log₂(Nₖ) into `noise_margin` (raising it
+well above the ~10-bit default) rather than into depth — inflating multiplicative
+depth burns primes on chain length the circuit doesn't need, and you may be
+pinned at the security ceiling anyway.
+
+This is usually *the* reason a circuit that comfortably fits the depth budget is
+still noise-marginal, and it predicts *which* workloads are reject-rate-prone:
+**high additive fan-in relative to multiplicative depth** — wide dense layers
+(transformer attention/FFN, large MLPs) far more than deep-but-narrow circuits.
+And because CKKS multiplication noise is message-dependent (≈ m·e), the effective
+cost is fan-in × summand magnitude, so it feeds straight into the
+*data-composition-dependent* margin above: batches whose data puts larger values
+into the deep accumulations pay more and are the ones that tip over `Decode`.
+(Observed on a 12-layer transformer at N = 2^16: dense-matmul accumulations of
+fan-in ~768 carried several× the noise a uniform per-bootstrap model predicted,
+concentrated in the linear accumulation chains, pushing the deepest layer's
+data-heavy inputs past the decode threshold while lighter inputs on the
+identical circuit decoded cleanly.)
 
 **The no-bootstrap depth ceiling (and the escalation ladder above it).** The
 modulus a given ring can carry at the target security level caps the depth you
