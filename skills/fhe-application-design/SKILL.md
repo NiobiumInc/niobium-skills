@@ -1299,6 +1299,74 @@ concentrated in the linear accumulation chains, pushing the deepest layer's
 data-heavy inputs past the decode threshold while lighter inputs on the
 identical circuit decoded cleanly.)
 
+### When the reject rate is the wall and you're at the parameter ceiling: co-design the model, don't tune parameters
+
+The two failure modes above assume you can still *buy* budget (raise depth or
+scaling). Once you are at the **security ceiling** for your ring — depth ~26 at
+N=2¹⁶/128-bit/sparse is the hard maximum (OpenFHE refuses depth 27, and raising
+`dnum` to free special-prime budget makes the key-switch keys too large to fit a
+32 GB accelerator) — a **data-composition-dependent decode-reject rate becomes
+irreducible by parameters**. If that rate is too high for the application (a full
+12-layer transformer measured **~40%** at this point), the only remaining lever
+is the **model itself**. This is worth naming plainly because the recipe
+otherwise has no answer for it — and **this skill frames the problem and the
+target; it does not perform the retraining (that is a much larger effort).**
+
+**The framing: everything upstream is post-training quantization; production
+needs quantization-aware training.** Fitting polynomials, calibrating domains,
+and budgeting noise *around a model trained for float accuracy* is PTQ — and it
+hits the wall PTQ always hits: the trained weights produce activation
+distributions (outlier channels, a residual stream that grows layer over layer)
+the constrained substrate cannot hold, and no downstream cleverness fixes a
+distribution training baked in. The production move is the QAT analog — bake the
+substrate's constraints into training.
+
+**Why the model is the right lever, specifically.** The part of the noise that
+drives the reject is the part only the model controls. CKKS multiplication noise
+is message-dependent (≈ m·e), so the noise that tips a ciphertext over `Decode`
+scales with the *magnitude* of the values flowing through the deep layers — and
+those magnitudes (residual-stream growth, the massive outlier channels of a
+trained transformer) are a property of the weights. The reject is data-dependent,
+**not predictable offline** (a *passing* input can carry more measured noise at a
+mid-circuit checkpoint than a *rejecting* one; no aggregate offline quantity —
+operand magnitude, polynomial amplification, bootstrap magnitude, domain margin —
+separates the two sets), and it occurs at effective spare-level ≈ 0. When you can
+neither predict/filter it nor buy margin, the only handle left is to shrink the
+message magnitudes at the source: train with **bounded activations** and
+**outlier suppression** (e.g. SmoothQuant-style migration of outlier magnitude
+into the weights).
+
+**Two precisions to hold the retraining to:**
+
+- **Target the exhausted resource, not just accuracy.** "Train with polynomial
+  activations" buys approximation fidelity, not noise budget. To move the reject
+  rate the training must *bound activations and suppress outliers* (shrink m·e),
+  and ideally *reduce depth/degree consumption* (FHE-frugal nonlinearities,
+  fewer/narrower layers) so the circuit gains genuine spare levels.
+  Accuracy-preserving QAT that leaves the residual stream growing will not clear
+  it.
+- **It is the fixed-hardware lever; more budget is the fixed-model lever —
+  production usually needs both.** Retraining shrinks the *message-dependent*
+  noise but not the fixed bootstrap/rescale/key-switch floor (set by the
+  parameters), so it lowers the reject rate without necessarily zeroing it. The
+  complementary move is budget: a larger-memory accelerator, or a larger ring
+  (N=2¹⁷) that carries real spare levels without touching the model. The honest
+  production spec is **co-design** — an FHE-frugal model *and* hardware with
+  headroom — because each alone fights uphill.
+
+**Make it falsifiable cheaply — before any encrypted run.** Give the faithful
+twin a **magnitude-scaled noise term** (per-op noise ∝ operand magnitude, plus
+the additive-fan-in bits from the note above), calibrated once to measured
+hardware noise, so it *predicts* the decode-reject rate offline. Then each
+tightening of the training constraints (lower activation bound, fewer outliers)
+should show the predicted reject rate fall in the twin *before* you spend an
+encrypted validation run. This keeps the co-design from becoming its own
+tail-chase: you watch the reject rate drop offline as the model's activation
+statistics improve, and reserve hardware time for a variant the twin already says
+should pass. (Note the standard-twin trap: a *noiseless* twin reports the
+polynomial answer and cannot see this reject at all — it must carry the
+magnitude-scaled noise term or it will certify a model the encrypted run rejects.)
+
 **The no-bootstrap depth ceiling (and the escalation ladder above it).** The
 modulus a given ring can carry at the target security level caps the depth you
 can buy: max depth ≈ (logQP_ceiling − first_mod − key-switching overhead) /
