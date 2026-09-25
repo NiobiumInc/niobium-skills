@@ -1153,6 +1153,13 @@ running sums, and output compression. Read
 encryption: an autoencoder ensemble with Chebyshev-approximated activation
 functions, feature-major packing, and a streaming batch protocol.
 
+Those examples are **shallow** circuits. For **deep sequential models**
+(transformers, deep nets), read `references/deep-models-under-fhe.md`: the
+per-layer FHE anatomy and hard-won rules (attention/softmax, LayerNorm rsqrt,
+composite activations, the residual stream), and — stated honestly — the
+unsolved noise-growth-across-depth problem, its partial mitigations, and when to
+escalate to co-design rather than parameter tuning.
+
 ## Stage 6: Select Parameters
 
 Parameter selection is tightly coupled to the circuit design from Stage 5.
@@ -2037,6 +2044,7 @@ self-contained and can be read independently.
 | `references/example-set-membership.md` | Stages 5–9: complete CKKS design spec and implementation (squared distance, iterated squaring, column-major packing, threat model) |
 | `references/example-fetch-by-similarity.md` | Stage 5: advanced CKKS patterns (Chebyshev approximation, slot replication, running sums, output compression) |
 | `references/example-network-intrusion-detection.md` | Stages 3–8: ML inference under encryption (autoencoder ensemble, Chebyshev activations, feature-major packing, streaming batches) |
+| `references/deep-models-under-fhe.md` | Stages 3, 5, 6: deep sequential models (transformers, deep nets) — per-layer FHE anatomy and rules, and the (unsolved) noise-growth-across-depth problem with its partial mitigations and the co-design escalation |
 | `references/openfhe-examples-catalog.md` | All stages: catalog of specific OpenFHE examples mapped to design patterns |
 
 ## Key Principles
