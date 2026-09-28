@@ -1103,6 +1103,15 @@ exact comparison is not directly possible. Common approaches include:
   series. Higher depth but more flexible, good for comparison against
   continuous thresholds.
 
+**Performance is decided here.** Packing, amortization, and key-switch-frugality
+are structural circuit choices, not a later tuning pass. Before sizing depth,
+read `references/performance-and-packing.md`: pack for the dominant operation,
+batch for throughput (SIMD slots are the unit of useful work), minimize
+key-switching (BSGS, hoisting, key-affinity, modest `dnum`), overlap the
+plaintext/weight encode with compute, and design for throughput rather than
+single-inference latency. The rest of this section's depth/aggregation notes feed
+into that.
+
 **Depth budget.** Sum up the multiplicative depth of every operation in the
 circuit. This number directly determines the CKKS/BFV/BGV parameters you'll
 need. Strategies to reduce depth: tree-structured reductions, deferred
@@ -1152,6 +1161,13 @@ running sums, and output compression. Read
 `references/example-network-intrusion-detection.md` for ML inference under
 encryption: an autoencoder ensemble with Chebyshev-approximated activation
 functions, feature-major packing, and a streaming batch protocol.
+
+Those examples are **shallow** circuits. For **deep sequential models**
+(transformers, deep nets), read `references/deep-models-under-fhe.md`: the
+per-layer FHE anatomy and hard-won rules (attention/softmax, LayerNorm rsqrt,
+composite activations, the residual stream), and — stated honestly — the
+unsolved noise-growth-across-depth problem, its partial mitigations, and when to
+escalate to co-design rather than parameter tuning.
 
 ## Stage 6: Select Parameters
 
@@ -2037,6 +2053,8 @@ self-contained and can be read independently.
 | `references/example-set-membership.md` | Stages 5–9: complete CKKS design spec and implementation (squared distance, iterated squaring, column-major packing, threat model) |
 | `references/example-fetch-by-similarity.md` | Stage 5: advanced CKKS patterns (Chebyshev approximation, slot replication, running sums, output compression) |
 | `references/example-network-intrusion-detection.md` | Stages 3–8: ML inference under encryption (autoencoder ensemble, Chebyshev activations, feature-major packing, streaming batches) |
+| `references/deep-models-under-fhe.md` | Stages 3, 5, 6: deep sequential models (transformers, deep nets) — per-layer FHE anatomy and rules, and the (unsolved) noise-growth-across-depth problem with its partial mitigations and the co-design escalation |
+| `references/performance-and-packing.md` | Stages 5, 6: FHE performance — SIMD packing/data layout, batch amortization, throughput vs latency, the key-switch-frugal circuit (BSGS, hoisting, key-affinity, dnum), the plaintext/weight encode-ahead pipeline, and the order to apply them |
 | `references/openfhe-examples-catalog.md` | All stages: catalog of specific OpenFHE examples mapped to design patterns |
 
 ## Key Principles
