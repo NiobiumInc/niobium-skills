@@ -357,6 +357,80 @@ whether you can run Docker at all.
 provisioning paths (image and local build), prerequisites, the mounted-folder
 data bus, the self-run vs. hand-off loop, torch references, and troubleshooting).
 
+### Choose the Fog deployment target (the hardware envelope is a design input)
+
+You **develop and validate locally** — the light-tier twin (Stages 1–7) and the
+CPU/simulator encrypted build (Stage 8) run on whatever machine you have,
+effectively unconstrained but slow. You **design for and deploy to the Niobium
+Fog** (Stage 10), which runs your compiled trace on Niobium accelerators. The
+Fog's hardware envelope is therefore a **design input from Stage 0, not an
+afterthought**: the target fixes the ring dimension N, the number of RNS limbs,
+and the arithmetic word size (hence the prime-size cap), and those propagate all
+the way into feasibility (Stage 2), circuit design (Stage 5), and parameter
+selection (Stage 6). The classic FHE failure is a circuit that is correct in
+plaintext and then won't fit, misses the security target, or won't decode on the
+real device — always trace it back to a design that ignored the envelope.
+
+Ask the user which target they are designing for (default: the current FPGA), and
+record it in the same memory as the other Stage-0 answers. Each row below is a
+**fixed** hardware envelope; everything else — how many limbs you actually use,
+prime sizes up to the cap, `dnum`, how you spend depth, and your bootstrap
+budget — is yours to choose within it.
+
+| profile | ring N | RNS limbs (max) | prime-size cap | word | device memory | on-chip registers | schemes | bootstrapping |
+|---|---|---|---|---|---|---|---|---|
+| **FPGA (Oct '26)** | 2¹⁶ (fixed) | 48 | 62-bit | 64-bit | 32 GB (HBM2e) | 64 residue polys (32 MB) | CKKS | yes |
+| **ASIC** *(preview)* | 2¹⁵ or 2¹⁶ | 48 | 62-bit | 64-bit | 256 GB (LPDDR5X) | 128 residue polys (64 MB) | CKKS | yes |
+
+An on-chip "register" holds one N=2¹⁶ single-prime residue polynomial (512 KB), so
+a full high-depth ciphertext (two polynomials × ~30 limbs) does **not** fit
+on-chip — most key and ciphertext traffic streams from device memory. CKKS is the
+compiler's supported scheme today (the hardware also does BGV/BFV; compiler
+support is planned — no TFHE). Any OpenFHE secret distribution is available. Fog
+jobs can be spread across **multiple accelerators**.
+
+**The load-bearing propagation: hardware limbs are not usable depth.** The
+profiles give up to **48 limbs**, but how many you can actually *use* is capped by
+**security**, not by the hardware. At N=2¹⁶ and 128-bit classical, the modulus
+ceiling is ~**1780 bits**, so:
+
+> usable limbs ≈ 1780 ÷ prime-size ≈ **~28** at 62-bit primes, **~35** at 50-bit,
+> and the full **48** only with **~37-bit primes** — trading per-level precision
+> for depth.
+
+At N=2¹⁵ (ASIC) the ceiling roughly halves (~890 bits → ~14–24 usable limbs). So
+**do the security-ceiling arithmetic in Stage 2 and design to the *usable* depth
+for your chosen prime size — never to the raw 48.** Designing to 48 when 128-bit
+security permits ~28–35 is the exact reason a circuit passes in plaintext and then
+fails on the device.
+
+**How the envelope shapes the stages:**
+
+| envelope fact | what it bounds |
+|---|---|
+| N + usable (security-capped) limbs | max multiplicative depth → **Stage 2** feasibility, **Stage 6** depth budget |
+| device-memory capacity | evaluation keys + working set must fit, or the job spans devices → **Stage 6** `dnum`, packing width, multi-accelerator split |
+| on-chip register count | how much key/ciphertext stays resident → how effective hoisting/key-reuse is → **Stage 5** favor rotation-frugal circuits |
+| bootstrapping supported | deep circuits are feasible, but each refresh costs levels and dominates runtime → **Stage 6** bootstrap budget, **Stage 3** keep usable levels between refreshes |
+
+**Design implications worth internalizing early:**
+- **Key-switching is the bottleneck, and it is bandwidth/capacity-bound.** Every
+  rotation and relinearization streams a large evaluation key from device memory,
+  so design **rotation-frugal**: hoist (decompose once, reuse across rotations
+  that share a source), cluster same-key uses (key-affinity scheduling), and keep
+  `dnum` modest — a larger `dnum` shrinks the special modulus but *enlarges* the
+  key-switching keys, and key memory is the binding resource. Absolute throughput
+  is workload- and release-dependent; size performance against current Fog
+  benchmarks, not against peak memory specs.
+- **Capacity is where the big models live.** The FPGA (32 GB) is the compact
+  current target; the ASIC's 256 GB and multi-accelerator spanning are the
+  headroom for models whose keys + working set exceed one device. If a design
+  can't buy a level or hold its keys on one accelerator, that is a *capacity*
+  conversation, not a dead end.
+- **CKKS today.** For Fog deployment, Stage 4's scheme choice is CKKS; the general
+  scheme-selection guidance still applies for understanding *why*, and BGV/BFV
+  open up as compiler support lands.
+
 ## Stage 1: Establish the Privacy Model
 
 **First, ask the topic-area familiarity question** (see "Communicating with the
