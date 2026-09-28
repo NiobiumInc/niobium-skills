@@ -1583,7 +1583,11 @@ twin bit-exactly before any C++ is written. This moves all indexing cleverness
 into testable Python; the C++ server becomes a mechanical transcription of a
 verified program. In practice the encrypted intermediates then match this
 simulation to four decimal places — when they don't, the divergence is crypto
-runtime, not circuit (see the bootstrapping section's probes).
+runtime, not circuit (see the bootstrapping section's probes). When an encrypted
+run outright fails — an undecodable result, a crash, or a wrong decrypt — read
+`references/debugging-the-encrypted-run.md`: the triage (crash vs undecodable vs
+wrong), deterministic-vs-transient, checkpoint bisection, and
+decrypt-and-compare-against-the-sim to localize and classify the failure.
 
 A validated, decode-safe twin is the primary design deliverable. Stage 8 turns it
 into encrypted code.
@@ -2048,6 +2052,7 @@ self-contained and can be read independently.
 | `references/run-harness.md` | Stages 8, 10: the generated run scaffold (run.sh, run_test.sh with its four run modes, metrics, and env vars, the Makefile clean target) and how to document the run end to end in the README (Stage 9) |
 | `references/implementing-with-openfhe.md` | Stage 8 (OpenFHE path): the OpenFHE C++ build mechanics — CMake/linking, context features and serialization, the shared `run_circuit` |
 | `references/implementing-with-nb-dsl.md` | Stage 8 (DSL path): implementing the design in the `nb` FHE DSL (niobium-client) — stage-to-construct mapping, the deliverable contract in DSL form, workflow, pitfalls, limitations |
+| `references/debugging-the-encrypted-run.md` | Stage 8, when an encrypted run fails: triage (crash / undecodable / wrong), deterministic-vs-transient, checkpoint bisection, decrypt-and-compare against the sim, the three numeric failure modes and fixes, and build-time guards that prevent them |
 | `references/niobium-client-fog-variant.md` | Stage 10: running the niobium-client Fog deployment (`app/`) of a validated OpenFHE app (`app/` layout, the `niobium::compiler()` recording pattern, the in-container build, simulation verification, trace submission) |
 | `references/fhe-application-dialogue.md` | Stages 3–8: a worked example showing all steps for a real anomaly detection application |
 | `references/example-set-membership.md` | Stages 5–9: complete CKKS design spec and implementation (squared distance, iterated squaring, column-major packing, threat model) |
