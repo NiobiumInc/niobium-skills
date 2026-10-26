@@ -2228,7 +2228,11 @@ any of them.
   seed travel (halves every key; the stock library has no seeded API, so the
   application generates the seeded objects itself with its own PRNG for `a`,
   never the library's global one, and the server re-expands them); trade
-  `dnum` against key size within the security ceiling.
+  `dnum` against key size within the security ceiling; and for rotation-heavy
+  or bootstrapped circuits, **hierarchical rotation keys** (ePrint 2022/532),
+  where the client ships a small base set and the server derives the rest at
+  setup, cutting client key generation and the setup transfer by one to two
+  orders of magnitude at the cost of derivation noise and a build.
 - **Per-request upload (the recurring cost).** In order from free to
   project-sized: **level-match the inputs** to the first segment's starting
   level instead of encrypting fresh (free, and large in bootstrapped designs);

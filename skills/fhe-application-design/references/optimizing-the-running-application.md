@@ -179,6 +179,53 @@ covers the trade; the Stage 0 hardware envelope caps what fits. Treat it as a
 parameter change, which means re-running the Stage 6 decode-safety arithmetic
 before the gate.
 
+### A4. Hierarchical rotation keys (the server derives most of them)
+
+A2 halves each rotation key; this halves nothing per key but cuts **how many
+keys the client has to generate and send at all**. Lee, Lee, Kim and No,
+*Rotation Key Reduction for Client-Server Systems of Deep Neural Network on
+Fully Homomorphic Encryption* (IACR ePrint 2022/532,
+https://eprint.iacr.org/2022/532), make rotation keys hierarchical: the client
+generates and ships only a small **base set** of rotation keys, and the server
+derives every other rotation key the circuit needs from the public key and
+that base set, once, at setup. The derivation is public-key work on public
+material, so no secret leaves the client. Reported on ResNet-18 under CKKS: the
+full key set drops from 115.7 GB to 2.91 GB with a two-level hierarchy (client
+key generation from 145 s to 3.7 s) and to 1.54 GB with three levels (1.9 s).
+The two-level variant leaves the homomorphic operations on ciphertexts
+unchanged; the three-level variant adds some key-switching work.
+
+This is the lever for circuits whose rotation-key set is measured in
+gigabytes: BSGS matmuls over many diagonals, deep networks, and **bootstrapping
+key sets**, which are rotation keys and therefore derivable the same way. For a
+column-major MLP with no rotations there is nothing to derive, and the row
+reads "no gain here".
+
+- **Saves:** the client's key generation time and the setup transfer, by one
+  to two orders of magnitude on rotation-heavy circuits; composes with A2
+  (seed-expand the base set) since the two attack different factors of the
+  same product.
+- **Costs:** a one-time derivation pass on the server per key pair (key
+  switching, offline); **derived keys carry the noise of their derivation**,
+  so a circuit that was noise-marginal re-runs the Stage 6 decode-safety
+  arithmetic with the derived keys' noise in the margin; the three-level
+  variant also adds key-switching operations per use. Server key memory does
+  not shrink: the derived keys still exist on the server, so this helps
+  bandwidth and client time, not the device-memory envelope.
+- **Needs:** a build. Neither mainline OpenFHE nor niobium-client ships
+  hierarchical key derivation as of this writing. The server-side derivation
+  follows the paper's construction and installs the derived keys with the same
+  setters A2 uses; the client ships the base set and a manifest of which
+  rotations the server must derive. Check with Niobium whether the Fog path
+  can accept server-derived keys before building.
+- **Security:** none lost in the standard model; the base keys and the public
+  key are already public, and the derivation uses nothing else. Document in
+  Stage 9 that the server now holds a key-derivation step.
+- **Re-validate:** a unit test that a ciphertext rotated under a derived key
+  equals the same rotation under a client-generated key within noise (this
+  bounds the derivation noise directly), then the normal gate on the worst-case
+  slot population, since the extra noise is where a marginal decode tips.
+
 ## B. Shrinking the per-request upload
 
 The per-request upload is the cost that scales with usage, so it is usually the
