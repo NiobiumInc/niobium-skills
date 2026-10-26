@@ -1478,15 +1478,25 @@ circuit exceeds it, escalate in order:
   never adopt round trips silently.** Document in Stage 9 what each
   intermediate reveals to the client (e.g., hidden activations partially
   expose a server-held model).
-- **c. In-circuit bootstrapping** — supported in OpenFHE (EvalBootstrap) but
-  costs ~10–15 levels of overhead plus large constant factors, and is **not
-  supported on the target hardware backend**: designing for it commits the
-  deployment to a software-only path. Only with the user's explicit acceptance
-  of that trade.
+- **c. In-circuit bootstrapping** — supported in OpenFHE (EvalBootstrap) and
+  on the Fog targets (the Stage 0 profile table; bootstrapped LSTM and deep
+  CNN apps have been recorded and deployed this way, see the field notes in
+  `references/niobium-client-fog-variant.md`). It keeps the one-pass protocol
+  intact, but it is not free: ~10–15 levels of overhead per refresh, large
+  constant factors (refreshes typically dominate server time), bootstrapping
+  keys provisioned to the server home (often the largest key material, and
+  the binding item against the device-memory envelope), and a validation-path
+  constraint — the local `fhetch_sim` replay of a bootstrapped circuit at
+  N = 2^16 may not fit in a laptop's memory, so the simulator step may need a
+  large-memory host or the record-and-stop probe from the same field notes.
+  Only with the user's explicit acceptance of that cost, and only after the
+  bootstrap lab (next section) has measured refresh accuracy at the candidate
+  parameters.
 
 The choice between rungs b and c belongs to the **user**, made ahead of time
 with the trade-offs in front of them (round trips + intermediate exposure vs.
-software-only performance) — present both and ask; do not pick silently.
+refresh cost, bootstrapping-key memory, and a heavier validation path) —
+present both and ask; do not pick silently.
 
 ### Designing with bootstrapping (rung c in practice)
 
