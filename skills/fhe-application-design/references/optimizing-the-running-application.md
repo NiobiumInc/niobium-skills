@@ -92,23 +92,82 @@ serialize **only the `b` halves plus one seed** and the server expands the `a`
 halves on arrival. This halves every evaluation key, the public key, and
 (see B3) a secret-key-encrypted ciphertext.
 
+**This does not need library support, but it is not only a PRNG.** Mainline
+OpenFHE does not expand keys from a seed (issue
+openfheorg/openfhe-development#978 is open and milestoned for a later release)
+and niobium-client does not add it, so check the installed SDK for a seeded API
+first. Without one, the application can still do it, with one consequence that
+shapes the whole design: the library samples `a` *inside* key generation and
+derives `b` from it, and there is no hook to hand in your own `a`. So the server
+can only regenerate what the client chose, and the client can only choose it if
+the client computed `b` against it. **The application must generate every seeded
+object itself**, in `keygen`, from public API; reconstruction on the server is
+the easy half. Per object:
+
+- *Public key.* Sample `a` from the application's seeded expander over the
+  public-key parameters, sample `e` from the library's discrete Gaussian, set
+  `b = −a·s + e` (the secret key exposes its polynomial and `DCRTPoly` has the
+  arithmetic), and install both with `SetPublicElements`.
+- *Relinearization and rotation keys.* The real work. A hybrid key-switching key
+  is a vector of (`b`, `a`) pairs, one per digit, over the **extended modulus
+  Q·P**, not over Q: the expander must produce limbs for every prime in both
+  chains, and each digit's `b` carries the digit-decomposed old key scaled by P.
+  The formula is a few dozen lines in the library's hybrid key-switch
+  generator; transcribe it faithfully and install the vectors with
+  `SetAVector` / `SetBVector` on the key object. Budget a few hundred lines
+  including tests.
+- *Server side.* Deserialize the `b` halves and the seed, re-run the same
+  expander, install the `a` halves with the same setters, and use the key as
+  usual.
+
+Seven pitfalls, each of which has turned a "simple" seeded-key implementation
+into either a leak or silent garbage:
+
+1. **Never seed the library's own PRNG.** OpenFHE has one global engine that
+   also draws the secret key and every error term; seeding it with a public
+   seed would reveal `s` and `e`. The expander for `a` is a *separate* PRNG
+   that touches nothing else. The library's Blake2 engine class can be
+   instantiated with an explicit seed and counter and documents that the same
+   seed and counter reproduce the same stream, which makes it a reasonable
+   choice for the `a` stream specifically.
+2. **Uniform modulo each prime, without bias.** Each limb is a different
+   ~60-bit prime. Reduce random words by rejection sampling (or a wider
+   reduction), and fix the limb order and coefficient order once. Both ends
+   must produce identical words, so the expansion procedure is part of the
+   wire format, not an implementation detail.
+3. **Sample directly in evaluation (NTT) form.** The library samples `a` in
+   NTT form; uniform in NTT form is the same distribution as uniform in
+   coefficient form. Doing the same avoids a transform and one more thing to
+   disagree about.
+4. **Key generation stays in the client home.** It now runs in application
+   code, so it belongs in `keygen` under the same no-secret-key guard the
+   server enforces; the server program never gains a code path that touches
+   `s`.
+5. **Validate identity, then function, then the gate.** Hash the expanded `a`
+   vectors on the server and compare against the client's hash before use. Add
+   a unit test that a library-produced ciphertext key-switches and decrypts
+   correctly under the application-built keys. Only then run the normal Stage
+   11 gate. A wire-format mismatch produces garbage, not an error.
+6. **Pin the library version.** The key-switching formula tracks the hybrid
+   key-switch implementation; re-run the identity test on every SDK upgrade.
+7. **Expand before the trace.** The Fog trace carries evaluation keys, so the
+   safe default is to expand on the CPU server before recording; whether the
+   Fog can consume seeded keys directly is a question for the Niobium client.
+
 - **Saves:** ~50% of all key material and of the public key.
-- **Costs:** one PRNG expansion per key on the server at load time (fast, once);
-  a serialization format the stock library does not produce.
-- **Needs:** library support. As of this writing, mainline OpenFHE does **not**
-  expand from a seed (issue openfheorg/openfhe-development#978 is open and
-  milestoned for a later release), and niobium-client does not add it. Check
-  the installed SDK before promising this: look for a seeded key or seeded
-  serialization API in the headers, or ask Niobium. Without it, the alternative
-  is a custom serialization layer that strips and regenerates the `a` halves,
-  which is real work and must use the library's own sampler so the regenerated
-  polynomials are bit-identical.
+- **Costs:** application-owned generation of the seeded objects (small for the
+  public key, a few hundred lines plus tests for key-switching keys); one PRNG
+  expansion per key on the server at load time (fast, once); a documented
+  expansion procedure as part of the wire format.
+- **Needs:** either a seeded API in the installed SDK, or the application-owned
+  generation above. Nothing from the library beyond its public setters and
+  polynomial arithmetic.
 - **Security:** none lost. The `a` halves are public already; the seed is
-  public too. The PRNG must be a cryptographic one and the seed must be fresh
-  per key generation.
-- **Re-validate:** the server must produce bit-identical results with expanded
-  keys and with the original keys (`--sim-full`'s ring-level identity check is
-  the right instrument), then the normal gate.
+  public too. The expander must be a cryptographic PRNG, separate from the
+  library's (pitfall 1), and the seed fresh per key generation.
+- **Re-validate:** the identity hash and the key-switch unit test from
+  pitfall 5, then the normal gate. `--sim-full`'s ring-level identity check
+  confirms the expanded keys drive the same computation on both paths.
 
 ### A3. Fewer, larger key-switching digits
 
@@ -187,16 +246,33 @@ The client holds the secret key, so it can encrypt inputs with it instead of
 with the public key. A secret-key encryption is (−a·s + e + m, a) with `a`
 uniformly random, which means it is exactly the shape A2 compresses: with seed
 expansion, the client ships **one polynomial plus a seed** per ciphertext, half
-the size. OpenFHE exposes `cc->Encrypt(keys.secretKey, pt)`.
+the size.
 
-- **Saves:** 50% of the upload, but **only together with A2's seed expansion**;
-  without seed support both halves still ship and nothing is gained.
-- **Costs:** the `encrypt` program must now hold the secret key. In the
-  four-program split it already lives in the client home beside `decrypt`, so
-  the trust boundary is unchanged, but the Stage 9 document must say that
-  `encrypt` is a secret-key-bearing program.
-- **Needs:** A2.
-- **Re-validate:** the normal gate; the fresh noise of a secret-key encryption is
+As with A2, the library's `cc->Encrypt(keys.secretKey, pt)` samples its own `a`,
+so the application builds the seeded ciphertext itself, and this is the easiest
+of the seeded objects. The reliable recipe: encrypt the plaintext once normally
+to get a **template** ciphertext with correct metadata (level, noise scale
+degree, scaling factor, slots), then replace its two elements with `a` from the
+seeded expander (one seed per ciphertext, or one seed plus a per-ciphertext
+counter) and `b = −a·s + e + m`, where `m` is the encoded plaintext's polynomial
+and `e` is fresh library Gaussian noise. The ciphertext class exposes
+`SetElements` and setters for every metadata field. The server rebuilds `a`
+from the seed, installs it, and proceeds. All seven A2 pitfalls apply,
+especially the first: the expander is never the library's global PRNG, which
+also draws `e`.
+
+- **Saves:** 50% of the upload, but **only together with A2's expander**;
+  without seed expansion both halves still ship and nothing is gained.
+- **Costs:** the application-built encryption path (small, given the template
+  trick) and a per-ciphertext seed or counter on the wire. The `encrypt`
+  program must now hold the secret key. In the four-program split it already
+  lives in the client home beside `decrypt`, so the trust boundary is
+  unchanged, but the Stage 9 document must say that `encrypt` is a
+  secret-key-bearing program.
+- **Needs:** the A2 expander and wire format.
+- **Re-validate:** the identity hash on the server, a unit test that the
+  application-built ciphertext decrypts to the plaintext within fresh-encryption
+  noise, then the normal gate. The fresh noise of a secret-key encryption is
   smaller than a public-key one, so nothing tightens.
 
 ### B4. Hybrid FHE: symmetric input transciphering

@@ -2215,9 +2215,10 @@ any of them.
 
 - **Key material (setup, once per key pair).** Ship only the rotation keys the
   circuit uses; **seed-expand evaluation keys** so only the `b` halves and a
-  seed travel (halves every key, but needs a seeded serialization the stock
-  library does not provide, so check the installed SDK first); trade `dnum`
-  against key size within the security ceiling.
+  seed travel (halves every key; the stock library has no seeded API, so the
+  application generates the seeded objects itself with its own PRNG for `a`,
+  never the library's global one, and the server re-expands them); trade
+  `dnum` against key size within the security ceiling.
 - **Per-request upload (the recurring cost).** In order from free to
   project-sized: **level-match the inputs** to the first segment's starting
   level instead of encrypting fresh (free, and large in bootstrapped designs);
