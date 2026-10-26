@@ -2227,7 +2227,9 @@ any of them.
   circuit uses; **seed-expand evaluation keys** so only the `b` halves and a
   seed travel (halves every key; the stock library has no seeded API, so the
   application generates the seeded objects itself with its own PRNG for `a`,
-  never the library's global one, and the server re-expands them); trade
+  never the library's global one, and the server re-expands them — run the
+  image's `fhe-seedkey-lab` first, which proves the recipe for the installed
+  OpenFHE build); trade
   `dnum` against key size within the security ceiling; and for rotation-heavy
   or bootstrapped circuits, **hierarchical rotation keys** (ePrint 2022/532),
   where the client ships a small base set and the server derives the rest at
@@ -2372,8 +2374,8 @@ Throughout the design process, keep these principles in mind:
   (silent no-ops, correction factors) are invisible to the twin — a design
   can match the reference perfectly in plaintext and still produce garbage
   encrypted. Each runtime property needs its own cheap empirical probe
-  (`fhe-boot-lab`, the slot-level simulation, instrumented decrypts) before
-  and during the encrypted build.
+  (`fhe-boot-lab`, `fhe-seedkey-lab`, the slot-level simulation, instrumented
+  decrypts) before and during the encrypted build.
 
 - **Depth is the critical resource.** Multiplicative depth drives parameter
   sizes, which drive memory and performance. Every design decision should

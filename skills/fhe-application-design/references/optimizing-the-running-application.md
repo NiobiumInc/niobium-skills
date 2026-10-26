@@ -121,8 +121,35 @@ the easy half. Per object:
   expander, install the `a` halves with the same setters, and use the key as
   usual.
 
-Seven pitfalls, each of which has turned a "simple" seeded-key implementation
-into either a leak or silent garbage:
+**The evidence: `fhe-seedkey-lab`, shipped in the FHE-dev image.** This is not
+a design on paper. The image carries a probe (`environment/seedkey_lab.cpp`) that
+does the whole recipe for the installed OpenFHE build — public key, relin key,
+and rotation keys with `a` from a seeded Blake2 engine and `b` from the formulas
+above — ships only the `b` halves plus the seed, re-expands on the "server", and
+checks three things: that the expanded `a` polynomials are bit-identical, that
+recomputing `b` from the *library's own* `a` differs from the library's `b` by
+noise only (a formula-transcription check, per key kind), and that a known
+vector rotates and squares correctly under every combination of library and
+application keys and ciphertexts. Measured on the v0.14.0 image at N = 2^16,
+HEStd_128_classic, depth 12, dnum 3, five rotations: every expansion
+IDENTICAL, every key kind's formula difference ≈ 2^4 (noise), all four
+ciphertext/key combinations at max error ≈ 6×10⁻⁸ (the library floor), and
+sizes at exactly 50%: public key 13 → 6.5 MiB, relin 51 → 25.5 MiB, five
+rotation keys 255 → 128 MiB. The same source passes against upstream OpenFHE
+1.5.1. Run it before relying on A2 and after every SDK upgrade:
+
+```bash
+docker run --rm ghcr.io/niobiuminc/fhe-dev:latest fhe-seedkey-lab                 # toy ring, seconds
+docker run --rm ghcr.io/niobiuminc/fhe-dev:latest fhe-seedkey-lab 45 55 12 65536 3 1,2,4,8,16 7 1   # production-shaped
+```
+
+A `SEEDKEY PASS` is the green light; a `DIFFERENT` line is a wire-format bug, a
+`NOT noise` formula line is a transcription mismatch for this library version,
+and a `DECODE FAIL at rot…` with a clean relin is the pairing pitfall below.
+
+Eight pitfalls, each of which has turned a "simple" seeded-key implementation
+into either a leak or silent garbage (the eighth is the one the lab caught on
+its first run):
 
 1. **Never seed the library's own PRNG.** OpenFHE has one global engine that
    also draws the secret key and every error term; seeding it with a public
@@ -154,6 +181,13 @@ into either a leak or silent garbage:
 7. **Expand before the trace.** The Fog trace carries evaluation keys, so the
    safe default is to expand on the CPU server before recording; whether the
    Fog can consume seeded keys directly is a question for the Niobium client.
+8. **Get the rotation-key pairing right.** A rotation key for automorphism
+   index g is `KeySwitchGen(old = s, new = s(X^(g⁻¹)))`, because the library
+   key-switches *first* and applies the automorphism afterwards. The natural
+   transcription, `s(X^g) → s`, produces keys that expand identically, pass
+   every identity check, and decrypt to garbage on the first rotation while
+   the relinearization key (`s² → s`) works. The lab's per-key formula check
+   is what separates the two in seconds.
 
 - **Saves:** ~50% of all key material and of the public key.
 - **Costs:** application-owned generation of the seeded objects (small for the
@@ -166,9 +200,11 @@ into either a leak or silent garbage:
 - **Security:** none lost. The `a` halves are public already; the seed is
   public too. The expander must be a cryptographic PRNG, separate from the
   library's (pitfall 1), and the seed fresh per key generation.
-- **Re-validate:** the identity hash and the key-switch unit test from
-  pitfall 5, then the normal gate. `--sim-full`'s ring-level identity check
-  confirms the expanded keys drive the same computation on both paths.
+- **Re-validate:** `fhe-seedkey-lab` at the application's own parameters
+  first (it is the identity hash, the formula check and the key-switch unit
+  test from pitfall 5 in one run), then the normal gate. `--sim-full`'s
+  ring-level identity check confirms the expanded keys drive the same
+  computation on both paths.
 
 ### A3. Fewer, larger key-switching digits
 
@@ -305,9 +341,11 @@ seeded expander (one seed per ciphertext, or one seed plus a per-ciphertext
 counter) and `b = −a·s + e + m`, where `m` is the encoded plaintext's polynomial
 and `e` is fresh library Gaussian noise. The ciphertext class exposes
 `SetElements` and setters for every metadata field. The server rebuilds `a`
-from the seed, installs it, and proceeds. All seven A2 pitfalls apply,
+from the seed, installs it, and proceeds. All eight A2 pitfalls apply,
 especially the first: the expander is never the library's global PRNG, which
-also draws `e`.
+also draws `e`. The public-key path of `fhe-seedkey-lab` exercises this exact
+formula (`b = −a·s + e`, plus `m` here), so a passing lab covers B3's
+arithmetic as well.
 
 - **Saves:** 50% of the upload, but **only together with A2's expander**;
   without seed expansion both halves still ship and nothing is gained.
