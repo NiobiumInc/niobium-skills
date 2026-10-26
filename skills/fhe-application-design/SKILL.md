@@ -17,7 +17,7 @@ license: Apache-2.0
 compatibility: OpenFHE (C++ or Python); Niobium nb FHE DSL (niobium-client)
 metadata:
   author: Niobium
-  version: 0.14.0
+  version: 0.15.0
 ---
 
 # FHE Application Design ("FHEanna")
@@ -255,7 +255,7 @@ The work runs at two speeds:
 - **The light tier (Stages 1–7) — always run it yourself.** The design, the
   parameter sweep, and the twin-vs-reference validation are pure Python (numpy)
   and run in your own environment as you converse.
-- **The heavy tier (Stages 8 and 10) — the build environment.** Building and
+- **The heavy tier (Stages 8, 10 and 11) — the build environment.** Building and
   running the encrypted OpenFHE programs is too heavy for a light environment. It
   runs against Niobium's instrumented OpenFHE fork and `libnbfhetch`, provisioned
   once either as the **FHE-dev image** (recommended, Docker only) or a **local
@@ -1478,15 +1478,25 @@ circuit exceeds it, escalate in order:
   never adopt round trips silently.** Document in Stage 9 what each
   intermediate reveals to the client (e.g., hidden activations partially
   expose a server-held model).
-- **c. In-circuit bootstrapping** — supported in OpenFHE (EvalBootstrap) but
-  costs ~10–15 levels of overhead plus large constant factors, and is **not
-  supported on the target hardware backend**: designing for it commits the
-  deployment to a software-only path. Only with the user's explicit acceptance
-  of that trade.
+- **c. In-circuit bootstrapping** — supported in OpenFHE (EvalBootstrap) and
+  on the Fog targets (the Stage 0 profile table; bootstrapped LSTM and deep
+  CNN apps have been recorded and deployed this way, see the field notes in
+  `references/niobium-client-fog-variant.md`). It keeps the one-pass protocol
+  intact, but it is not free: ~10–15 levels of overhead per refresh, large
+  constant factors (refreshes typically dominate server time), bootstrapping
+  keys provisioned to the server home (often the largest key material, and
+  the binding item against the device-memory envelope), and a validation-path
+  constraint — the local `fhetch_sim` replay of a bootstrapped circuit at
+  N = 2^16 may not fit in a laptop's memory, so the simulator step may need a
+  large-memory host or the record-and-stop probe from the same field notes.
+  Only with the user's explicit acceptance of that cost, and only after the
+  bootstrap lab (next section) has measured refresh accuracy at the candidate
+  parameters.
 
 The choice between rungs b and c belongs to the **user**, made ahead of time
 with the trade-offs in front of them (round trips + intermediate exposure vs.
-software-only performance) — present both and ask; do not pick silently.
+refresh cost, bootstrapping-key memory, and a heavier validation path) —
+present both and ask; do not pick silently.
 
 ### Designing with bootstrapping (rung c in practice)
 
@@ -2178,6 +2188,123 @@ docker run --rm -it -v "$HOME/.fog":/root/.fog ghcr.io/niobiuminc/fhe-dev:latest
 the exact `niobium::compiler()` recording pattern, the in-container build,
 simulation verification, and trace submission).
 
+## Stage 11: Optimize the Running Application
+
+Optimizations come **after** the application works, never instead of it. The
+entry condition is the Stage 10 result: the Fog (or simulator) run reproduces
+the faithful twin within the Stage 7 tolerance, the two-process demo stands,
+and the Stage 9 documents are closed out. Until then there is nothing to
+optimize, only something to fix, and an optimization applied to a design that
+has not yet passed its gate hides which of the two broke it. Treat this stage
+as optional in scope and mandatory in discipline: the user decides whether any
+of it is worth doing, and every piece that is done is re-validated to the same
+bar as the baseline.
+
+**Start from the measurement, not the technique.** `run_test` already reports
+the boundary sizes, per-stage timings, and peak server memory; that is the
+baseline ledger. Find the cost that binds *this* deployment (a one-time key
+transfer, the per-request upload, the per-request download, server time,
+server memory) and attack that one. Most of the techniques below shrink a
+number that, for a given application, was never the problem.
+
+**One optimization at a time, behind a switch, re-validated.** Keep the
+unoptimized path runnable until the optimized one has passed; it is both the
+comparison for the before/after numbers and the control when something breaks.
+Each applied optimization re-runs the full gate (`--cpu`, `--sim`, the Fog run,
+each within tolerance with zero decision flips) and the two-process demo, and
+gets a row in the **optimization ledger** of the results report with its
+before/after numbers, the cost it paid, and the validation result. Rejected and
+deferred candidates get rows too; they are the record that the trade was
+considered. Anything that changes what crosses the wire or what the server
+holds also updates the Stage 9 protocol document.
+
+**The catalogue, by what each item shrinks.** Details, sizing formulas,
+prerequisites, and the library-support status of each are in
+`references/optimizing-the-running-application.md`; read it before proposing
+any of them.
+
+- **Key material (setup, once per key pair).** Ship only the rotation keys the
+  circuit uses; **seed-expand evaluation keys** so only the `b` halves and a
+  seed travel (halves every key; the stock library has no seeded API, so the
+  application generates the seeded objects itself with its own PRNG for `a`,
+  never the library's global one, and the server re-expands them — run the
+  image's `fhe-seedkey-lab` first, which proves the recipe for the installed
+  OpenFHE build); trade
+  `dnum` against key size within the security ceiling; and for rotation-heavy
+  or bootstrapped circuits, **hierarchical rotation keys** (ePrint 2022/532),
+  where the client ships a small base set and the server derives the rest at
+  setup, cutting client key generation and the setup transfer by one to two
+  orders of magnitude at the cost of derivation noise and a build.
+- **Per-request upload (the recurring cost).** In order from free to
+  project-sized: **level-match the inputs** to the first segment's starting
+  level instead of encrypting fresh (free, and large in bootstrapped designs);
+  **ship fully depleted inputs** at one or two limbs and bootstrap them on
+  arrival (large saving, but costs a bootstrap per input and bootstrapping keys
+  on the server, so it pays only where the server already refreshes and the
+  target supports it); **secret-key encryption** of inputs, which halves them
+  only together with seed expansion; and **hybrid FHE**, where the client
+  encrypts inputs under an FHE-friendly symmetric cipher (Rubato or HERA for
+  CKKS) and ships those compact ciphertexts plus one FHE ciphertext of the
+  symmetric key, and the server decrypts them homomorphically before the
+  circuit. Hybrid FHE cuts the upload by 30–60× but adds the cipher's
+  decryption depth in front of the circuit and is an implementation project,
+  not a configuration, as no supported transciphering layer ships with the
+  toolchain today.
+- **Per-request download.** `Compress` the result to one limb as the last
+  server operation (the niobium-client examples already do this), emit margins
+  and normalized outputs, and pack several outputs into one ciphertext where
+  the layout allows.
+- **Serialization and transport.** Binary serialization only; no
+  general-purpose compression (RNS limbs do not compress; measure once and
+  record it); keys shipped once and addressed by fingerprint; batches streamed.
+- **Server time and memory.** Circuit-structure work from
+  `references/performance-and-packing.md`: packing, batching, rotation
+  frugality, `dnum`, depth. A packing change is a circuit change and re-enters
+  Stage 7 with a new twin.
+
+**Depth and noise move; re-derive before re-validating.** Several of these
+change what the circuit sees: hybrid FHE adds the cipher's depth in front of the
+circuit; depleted inputs add a refresh and its measured error to every input;
+compressing the result to one limb removes any spare-limb slack the decode was
+quietly relying on. For each, re-run the Stage 6 decode-safety arithmetic and
+give the twin the corresponding noise term before reusing the Stage 7 tolerance
+as the pass criterion. An optimization that only passes with a looser tolerance
+has not passed.
+
+**Present the candidates as one table, then ask who chooses.** Before applying
+anything, lay out every optimization that applies to this application in a
+single table: one row per candidate, with the measured **before** and the
+estimated **after** for each cost the deployment cares about (upload per
+request, download per request, one-time setup transfer, server time per
+request, server memory), the cost it pays in the same units, what must be true
+for it to work (the server already refreshes, the SDK supports it, depth
+budget has room), and the assistant's recommendation. Rows that do not apply
+(level-matching in a tight design) stay in the table with "no gain here" so
+the user can see they were considered. The communication rules apply with
+extra force: every number in the user's units ("each request uploads about
+200 MB today; this brings it to about 6 MB and adds about 20 seconds of server
+time"), never a technique name as the explanation. Then ask, naming the actor
+in each option:
+
+> Which of these do you want applied?
+> (a) You choose: name the rows to apply, and the assistant applies them in
+>     the table's order, one at a time.
+> (b) The assistant chooses: it applies the set that best reduces the cost you
+>     name as the one that matters (or the one the ledger shows is binding),
+>     cheapest first, within the depth budget and the hardware envelope, and
+>     skips anything that needs a build the SDK does not support.
+
+Either way the discipline above holds: one at a time, behind a switch,
+re-validated, and the table is re-presented after each applied row with the
+**measured** after replacing the estimate, so the next decision is made on
+real numbers. Record which option the user took and the rows applied in the
+ledger. The table format and the rule for option (b) are in the reference.
+
+**For detailed guidance:** Read `references/optimizing-the-running-application.md`
+(the sizing model, each optimization's savings, costs, prerequisites,
+library-support status and re-validation steps, the ledger format, and how to
+explain the trades).
+
 ## Reference Files
 
 Read these files as needed during the design process. Each file is
@@ -2203,6 +2330,7 @@ self-contained and can be read independently.
 | `references/deep-models-under-fhe.md` | Stages 3, 5, 6: deep sequential models (transformers, deep nets) — per-layer FHE anatomy and rules, and the (unsolved) noise-growth-across-depth problem with its partial mitigations and the co-design escalation |
 | `references/performance-and-packing.md` | Stages 5, 6: FHE performance — SIMD packing/data layout, batch amortization, throughput vs latency, the key-switch-frugal circuit (BSGS, hoisting, key-affinity, dnum), the plaintext/weight encode-ahead pipeline, and the order to apply them |
 | `references/openfhe-examples-catalog.md` | All stages: catalog of specific OpenFHE examples mapped to design patterns |
+| `references/optimizing-the-running-application.md` | Stage 11: optimizing the running application — the sizing model, seed-expanded keys, level-matched and depleted inputs, hybrid FHE (input transciphering), result compression, serialization, the optimization ledger, and how to re-validate and explain each trade |
 
 ## Key Principles
 
@@ -2246,8 +2374,8 @@ Throughout the design process, keep these principles in mind:
   (silent no-ops, correction factors) are invisible to the twin — a design
   can match the reference perfectly in plaintext and still produce garbage
   encrypted. Each runtime property needs its own cheap empirical probe
-  (`fhe-boot-lab`, the slot-level simulation, instrumented decrypts) before
-  and during the encrypted build.
+  (`fhe-boot-lab`, `fhe-seedkey-lab`, the slot-level simulation, instrumented
+  decrypts) before and during the encrypted build.
 
 - **Depth is the critical resource.** Multiplicative depth drives parameter
   sizes, which drive memory and performance. Every design decision should
@@ -2270,9 +2398,11 @@ Throughout the design process, keep these principles in mind:
   diverge, the three most likely causes are: exhausted noise budget,
   insufficient precision, or a missed non-linear operation.
 
-- **Iterate.** The first working encrypted version is a milestone, not the
-  finish line. Real-world performance comes from iterating on the balance
-  between depth, precision, parallelism, and parameter size.
+- **Iterate, but only on something that works.** The first working encrypted
+  version is a milestone, not the finish line. Real-world performance comes
+  from iterating on the balance between depth, precision, parallelism, and
+  parameter size, and from the Stage 11 pass: measured, one change at a
+  time, each re-validated to the same bar as the baseline.
 
 - **Execution mode: probe, don't assume.** Whether you run the containerized
   build yourself or hand commands to the user is a *capability* of the session,

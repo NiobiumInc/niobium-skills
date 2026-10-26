@@ -127,6 +127,20 @@ nothing). Run it before designing any bootstrapped circuit:
 docker run --rm ghcr.io/niobiuminc/fhe-dev:latest fhe-boot-lab 50 51 24 16384 3 3 1
 ```
 
+It also ships **`fhe-seedkey-lab`**, used by Stage 11's key-material
+optimizations (A2/B3): it runs application-owned seeded key generation —
+public, relinearization and rotation keys with the public polynomial drawn from
+a seeded PRNG and the other half computed by the library's own formulas — ships
+only the `b` halves plus the seed, re-expands on the server side, and checks
+bit-identity, the formula transcription against the library's own keys, and
+end-to-end rotation and relinearization error. Run it before relying on
+half-size keys, and after every SDK upgrade; `SEEDKEY PASS` is the green light:
+
+```bash
+docker run --rm ghcr.io/niobiuminc/fhe-dev:latest fhe-seedkey-lab                                   # toy ring, seconds
+docker run --rm ghcr.io/niobiuminc/fhe-dev:latest fhe-seedkey-lab 45 55 12 65536 3 1,2,4,8,16 7 1   # production-shaped
+```
+
 ## Path B: local niobium-client build
 
 Build niobium-client from source once on the host, then point the skill at the
@@ -250,6 +264,11 @@ g++ -O2 -std=c++17 "$SKILL_ENV/boot_lab.cpp" -o ~/.local/bin/fhe-boot-lab \
     -L"$NC/vendor/lib/niobium-client/lib" -lnbfhetch \
     -Wl,-rpath,"$NC/vendor/lib/openfhe/lib" -Wl,-rpath,"$NC/vendor/lib/niobium-client/lib"
 ```
+
+**Seeded-key lab (Stage 11), only if the design ships half-size keys.** Same
+recipe, same flags: compile `"$SKILL_ENV/seedkey_lab.cpp"` to
+`~/.local/bin/fhe-seedkey-lab` with the command above, substituting the source
+and output names.
 
 ## How the build environment is used later (Stages 8 and 10)
 

@@ -1,10 +1,10 @@
 # FHE Application Design: an AI Agent Skill for FHE
 
-An AI Agent Skill that guides developers through designing and building Fully Homomorphic Encryption (FHE) applications with OpenFHE (and an optional Niobium DSL path). It provides an eleven-stage methodology (Stages 0–10) covering the full design process, from build environment and privacy model through implementation, protocol specification, and a Niobium Fog deployment.
+An AI Agent Skill that guides developers through designing and building Fully Homomorphic Encryption (FHE) applications with OpenFHE (and an optional Niobium DSL path). It provides a twelve-stage methodology (Stages 0–11) covering the full design process, from build environment and privacy model through implementation, protocol specification, a Niobium Fog deployment, and optimization of the running application.
 
 ## What This Skill Does
 
-When a user asks the agent to design an FHE application, this skill provides structured guidance through eleven stages (0–10), beginning with a one-time environment setup:
+When a user asks the agent to design an FHE application, this skill provides structured guidance through twelve stages (0–11), beginning with a one-time environment setup:
 
 0. **Prepare the environment** — build the FHE-dev container from the skill's Dockerfile (Niobium's instrumented OpenFHE + `libnbfhetch`, plus the Python twin stack: numpy, and CPU torch for a PyTorch reference); run a smoke test so the twin and the FHE program can both be built and run before design starts
 1. **Privacy model** — identify parties, adversaries, encryption model (single vs. independent encryptors), output privacy, and output integrity (transciphering)
@@ -17,6 +17,7 @@ When a user asks the agent to design an FHE application, this skill provides str
 8. **Implement the FHE program** — OpenFHE C++ four-program architecture (keygen, encrypt, server, decrypt, plus a test runner) and a separate-process demo; an optional `nb` DSL path exists
 9. **Protocol specification** — message flow, threat model, information leakage, integrity guarantees
 10. **Fog deployment** — run the app in its default (Fog) mode to generate the FHETCH trace, validate it through the local simulator against the twin, and optionally submit it to the Niobium Fog
+11. **Optimization** — only once the application runs: measure the boundary sizes and timings, then apply one optimization at a time behind a switch and re-validate to the same bar — seed-expanded evaluation keys, level-matched or fully depleted inputs bootstrapped on arrival, hybrid FHE (symmetric input transciphering), result compression — recording each trade in an optimization ledger
 
 The skill ensures that common protocol-level errors are caught early: packing data across privacy boundaries, ignoring output integrity when the decryptor differs from the consumer, conflating SIMD parallelism with task-level concurrency, and over-provisioning ciphertext depth.
 
@@ -105,7 +106,8 @@ skills/fhe-application-design/
 ├── LICENSE                   # Apache-2.0 (bundled so an installed skill is self-contained)
 ├── environment/              # Stage 0 build-and-run environment
 │   ├── Dockerfile            # Builds the FHE-dev container (instrumented OpenFHE + libnbfhetch)
-│   └── boot_lab.cpp          # Smoke-test program built and run by `make test-release`
+│   ├── boot_lab.cpp          # fhe-boot-lab: measures real CKKS bootstrap accuracy (Stage 6)
+│   └── seedkey_lab.cpp       # fhe-seedkey-lab: proves application-owned seeded keys (Stage 11)
 ├── references/               # Domain knowledge files read on demand
 │   ├── environment-setup.md
 │   ├── explaining-fhe-to-newcomers.md
@@ -121,7 +123,11 @@ skills/fhe-application-design/
 │   ├── run-harness.md
 │   ├── implementing-with-openfhe.md
 │   ├── implementing-with-nb-dsl.md
-│   └── niobium-client-fog-variant.md
+│   ├── niobium-client-fog-variant.md
+│   ├── debugging-the-encrypted-run.md
+│   ├── deep-models-under-fhe.md
+│   ├── performance-and-packing.md
+│   └── optimizing-the-running-application.md
 └── evals/                    # Evaluation suite for skill quality
     └── evals.json
 ```
@@ -132,7 +138,9 @@ The `evals/` directory contains five scenarios (credit scoring, credential searc
 
 ## Version History
 
-**v0.14.0 (current)** — Stage 0 gains a second way to provision the build-and-run environment: a local niobium-client source build on the host, alongside the FHE-dev image. One mode-aware run harness (keyed on `NIOBIUM_CLIENT_DIR`) drives both, so the build and run commands are identical whether the SDK comes from the image or a local checkout. The FHE-dev image is published for both `linux/amd64` and `linux/arm64`, so Apple Silicon hosts run it natively.
+**v0.15.0 (current)** — Adds Stage 11, optimizing the running application: a post-deployment pass that starts from the measured boundary sizes and timings, applies one optimization at a time behind a switch, and re-validates each to the Stage 7 bar. The new `references/optimizing-the-running-application.md` covers the sizing model and the catalogue — seed-expanded evaluation keys, level-matched and fully depleted inputs (bootstrapped on arrival), secret-key encryption, hybrid FHE (symmetric input transciphering with Rubato/HERA), result compression, serialization and transport — each with its savings, costs, prerequisites, library-support status, and re-validation steps, plus the optimization ledger for the results report. The FHE-dev image gains a second probe, `fhe-seedkey-lab`, which proves application-owned seeded key generation (half-size public, relinearization and rotation keys) re-expands bit-identically and computes at the library's noise floor for the installed OpenFHE build. The eval suite grows to six scenarios with a per-request traffic-reduction case.
+
+**v0.14.0** — Stage 0 gains a second way to provision the build-and-run environment: a local niobium-client source build on the host, alongside the FHE-dev image. One mode-aware run harness (keyed on `NIOBIUM_CLIENT_DIR`) drives both, so the build and run commands are identical whether the SDK comes from the image or a local checkout. The FHE-dev image is published for both `linux/amd64` and `linux/arm64`, so Apple Silicon hosts run it natively.
 
 **v0.13.0** — Extends the methodology to eleven stages (Stages 0–10), carrying a design through implementation to a Niobium Fog deployment. The eval suite is now five scenarios (`evals/evals.json`), each pairing a prompt with an `expected_output` narrative.
 
@@ -144,15 +152,17 @@ Changes across iterations:
 - **Iteration 4:** Refined to dual-output transciphering pattern (decryptor sees result AND passes opaque symmetric ciphertext to consumer). Added honest SIMD assessment distinguishing task-level concurrency from SIMD parallelism. Added ciphertext/key size estimation formulas to Stage 6. Restructured the implementation stage around four separate programs (keygen, encrypt, server, decrypt) plus a test runner.
 - **Iteration 5:** Extended the flow to eleven stages (Stages 0–10). Stage 0 now builds the FHE-dev container from the skill's own `environment/Dockerfile` (Niobium's instrumented OpenFHE fork + `libnbfhetch`, compiled from source on first build) instead of pulling a prebuilt image. Stage 8 splits into parallel OpenFHE C++ and Niobium `nb` DSL implementation references over a shared run harness. Added Stage 10 (Fog deployment): run the app in its default Fog mode to generate an FHETCH trace, validate it through the local simulator against the twin, and optionally submit it to the Niobium Fog. Added an FHE-for-newcomers explainer and a standalone environment-setup reference, and grew the eval suite to five scenarios (adding two niobium-client implementation cases).
 - **Iteration 6:** Added a second Stage 0 provisioning path (a local niobium-client source build on the host, alongside the FHE-dev image), selected by `NIOBIUM_CLIENT_DIR`, with one generated `run-in-container.sh` that runs commands on the host or in the image behind a single interface. Made the run harness path-aware for both the OpenFHE and `nb` DSL implementations (per-path build commands, the DSL stage-binary interface, a batched-vs-per-record `run_test` variant), let an app vendor the client as a committed submodule or reuse a shared checkout, and published the FHE-dev image for `linux/amd64` and `linux/arm64` so Apple Silicon hosts run it natively. Hardened the flow through a test-driven loop of clean-room builds: the local build installs `NiobiumFhetchConfig.cmake` for `find_package`, the container wrapper forwards run knobs and is safe under bash 3.2, `--sim-full` gets its own run directory, peak RSS is read via `getrusage`, and the DSL path documents its `nbc` module invocation, local-replay routing, and codegen pitfalls.
+- **Iteration 7:** Added Stage 11 (optimizing the running application) and its reference, extending the flow to twelve stages (Stages 0–11). Optimizations are gated on a passing Stage 10 run, chosen from the measured ledger rather than from a list of techniques, applied one at a time behind a switch, and re-validated to the Stage 7 tolerance; the reference catalogues key-material, upload, download, transport, and compute-side optimizations with their trades and library-support status.
 
 ## Maintainer Notes
 
-If you modify SKILL.md, re-run the eval suite (`evals/evals.json`) to check for regressions. It holds five scenarios, each pairing a prompt with an `expected_output` that describes the design decisions a correct walkthrough must reach:
+If you modify SKILL.md, re-run the eval suite (`evals/evals.json`) to check for regressions. It holds six scenarios, each pairing a prompt with an `expected_output` that describes the design decisions a correct walkthrough must reach:
 
 - **Credit scoring** (independent encryptors, output integrity problem, logistic regression circuit) — exercises transciphering, packing-privacy consistency, SIMD honesty
 - **Credential search** (single encryptor for database, no integrity problem, set membership) — exercises column-major packing, scale handling, comparison circuit design
 - **Salary statistics** (multi-party, threshold/shared key considerations, aggregation) — exercises multi-party awareness, packing-privacy with shared keys, low-depth circuit
 - **Fraud-flag checker** (niobium-client repo, single encryptor, server data stays plaintext, CKKS nearest-match) — exercises end-to-end implementation and a squared-distance/iterated-squaring circuit
 - **Encrypted voting tally** (nb DSL, independent encryptors) — exercises recognizing that exact integer results need BFV while the nb DSL is CKKS-only, and routing away from a naive DSL implementation accordingly
+- **Per-request traffic reduction** (a passing, deployed CKKS app whose 200 MB upload is the complaint) — exercises Stage 11: gating on a working application, starting from the measured ledger, ordering the candidates honestly (result compression is free, level-matching gains nothing in a tight design, depleted-input bootstrapping and hybrid FHE are costed as trades), one change at a time with re-validation to the Stage 7 tolerance, and presenting the trades in the user's terms
 
-The three design scenarios (credit scoring, credential search, salary statistics) target the protocol-level checks that distinguish the skill from an unguided baseline — output integrity, packing-privacy consistency, and honest SIMD assessment — which are real flaws that would produce insecure or broken deployments. The two niobium-client scenarios exercise the implementation and DSL-versus-scheme routing added in v0.13.0.
+The three design scenarios (credit scoring, credential search, salary statistics) target the protocol-level checks that distinguish the skill from an unguided baseline — output integrity, packing-privacy consistency, and honest SIMD assessment — which are real flaws that would produce insecure or broken deployments. The two niobium-client scenarios exercise the implementation and DSL-versus-scheme routing added in v0.13.0. The traffic-reduction scenario exercises the Stage 11 optimization pass added in v0.15.0.
