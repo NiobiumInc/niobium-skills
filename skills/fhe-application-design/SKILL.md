@@ -2265,13 +2265,34 @@ give the twin the corresponding noise term before reusing the Stage 7 tolerance
 as the pass criterion. An optimization that only passes with a looser tolerance
 has not passed.
 
-**Present each candidate as a trade in the user's terms.** The communication
-rules apply with extra force here, because every item is a trade and the user
-owns the budget: lead with the measured before/after ("each request uploads
-about 200 MB today; this brings it to about 6 MB"), name the cost in the same
-units ("and adds about 20 seconds of server time per request, plus a one-time
-1 GB key download for the server"), state what must be true for it to work, and
-recommend. Never present an optimization as a technique name.
+**Present the candidates as one table, then ask who chooses.** Before applying
+anything, lay out every optimization that applies to this application in a
+single table: one row per candidate, with the measured **before** and the
+estimated **after** for each cost the deployment cares about (upload per
+request, download per request, one-time setup transfer, server time per
+request, server memory), the cost it pays in the same units, what must be true
+for it to work (the server already refreshes, the SDK supports it, depth
+budget has room), and the assistant's recommendation. Rows that do not apply
+(level-matching in a tight design) stay in the table with "no gain here" so
+the user can see they were considered. The communication rules apply with
+extra force: every number in the user's units ("each request uploads about
+200 MB today; this brings it to about 6 MB and adds about 20 seconds of server
+time"), never a technique name as the explanation. Then ask, naming the actor
+in each option:
+
+> Which of these do you want applied?
+> (a) You choose: name the rows to apply, and the assistant applies them in
+>     the table's order, one at a time.
+> (b) The assistant chooses: it applies the set that best reduces the cost you
+>     name as the one that matters (or the one the ledger shows is binding),
+>     cheapest first, within the depth budget and the hardware envelope, and
+>     skips anything that needs a build the SDK does not support.
+
+Either way the discipline above holds: one at a time, behind a switch,
+re-validated, and the table is re-presented after each applied row with the
+**measured** after replacing the estimate, so the next decision is made on
+real numbers. Record which option the user took and the rows applied in the
+ledger. The table format and the rule for option (b) are in the reference.
 
 **For detailed guidance:** Read `references/optimizing-the-running-application.md`
 (the sizing model, each optimization's savings, costs, prerequisites,

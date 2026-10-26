@@ -17,6 +17,7 @@ Contents:
 - [C. Shrinking the per-request download](#c-shrinking-the-per-request-download)
 - [D. Serialization and transport](#d-serialization-and-transport)
 - [E. Compute-side optimizations](#e-compute-side-optimizations)
+- [The candidate table and the choice](#the-candidate-table-and-the-choice)
 - [The optimization ledger](#the-optimization-ledger)
 - [Explaining the trades to the user](#explaining-the-trades-to-the-user)
 
@@ -388,6 +389,66 @@ only the discipline: profile by primitive first (bootstraps, rotations,
 relinearizations, Chebyshev evaluations), change one thing, re-validate. A
 packing change is a circuit change and re-enters Stage 7 with a new twin.
 
+## The candidate table and the choice
+
+Before anything is applied, the user gets one table with every candidate on
+it and decides how the pass will run. Build it from the measured baseline
+ledger; the **before** column is measured, the **after** column is an estimate
+from the sizing model and is labelled as one until a row has been applied and
+re-measured.
+
+One row per candidate that could apply to this application, including the
+ones that give nothing here (so the user sees they were considered), with:
+
+| column | what goes in it |
+|---|---|
+| candidate | a plain-language name, not the technique ("compress the result before sending it back", not "Compress(ct,1)") |
+| shrinks | which cost: upload / request, download / request, setup transfer (once), server time / request, server memory |
+| before → after | measured before, estimated after, in the user's units (MB, seconds, GB) |
+| what it costs | in the same units: added server time per request, a one-time key download, a longer first run, a new build |
+| needs | what must already be true: the server already refreshes; the SDK has the feature; the depth budget has N levels of room; a build of about this size |
+| recommend | apply / skip / defer, in one phrase, with the reason |
+
+Order the rows cheapest first within each cost they shrink, and put the
+binding cost's rows at the top. Keep the table to what the deployment cares
+about: a user who said setup bandwidth is fine does not need the setup rows
+argued, only listed.
+
+Then ask, naming the actor in each option as the communication rules require:
+
+> Which of these do you want applied?
+> (a) You choose: name the rows to apply, and the assistant applies them in
+>     the table's order, one at a time.
+> (b) The assistant chooses: it applies the set that best reduces the cost you
+>     name as the one that matters (or the one the ledger shows is binding),
+>     cheapest first, within the depth budget and the hardware envelope, and
+>     skips anything that needs a build the SDK does not support.
+
+**The rule for option (b).** "Best cost" needs an objective, so first fix the
+cost being minimized: the one the user names, else the one the baseline
+ledger shows is binding for the stated deployment (a mobile client makes it
+upload per request; a key-rotation policy makes it setup transfer; a shared
+accelerator makes it server time). Then:
+
+1. Take every row that reduces that cost and whose "needs" are already true
+   (no new build, no unsupported SDK feature, depth and envelope within
+   budget). These are applied, cheapest first.
+2. Among rows that reduce it but need a build (hybrid FHE, seeded keys without
+   an SDK API), apply none silently; present the best one as a separate
+   decision with its build cost, since a project is not something the
+   assistant signs the user up for.
+3. Among rows that reduce it at a cost in another dimension (depleted inputs
+   buying upload with server time and key memory), apply only if the cost
+   dimension is one the user said does not bind, and say so.
+4. Rows that do not reduce the objective are skipped, not applied "because
+   they are free"; the user can add them under option (a) later.
+
+Whichever option the user takes, the discipline is unchanged: one row at a
+time, behind a switch, re-validated to the Stage 7 tolerance. After each
+applied row, re-present the table with the measured after in place of the
+estimate, so the next row is chosen on real numbers, and record in the ledger
+below which option the user took and which rows were applied.
+
 ## The optimization ledger
 
 Record every optimization, applied or rejected, in the results report under a
@@ -413,7 +474,8 @@ and nonce scheme, bootstrapping keys in the server home, a secret-key-bearing
 
 The communication rules from the top of the skill apply with extra force here,
 because every optimization is a trade and the user is the one who owns the
-budget. Present each candidate as what it changes in their terms, not as a
+budget. The candidate table above is where the trades are presented; each row
+in it is written as what it changes in the user's terms, not as a
 technique: "each request currently uploads about 200 MB; this change brings it
 to about 6 MB and adds roughly 20 seconds of server time per request" is a
 decision a user can make; "transcipher the inputs with Rubato at depth 5" is
