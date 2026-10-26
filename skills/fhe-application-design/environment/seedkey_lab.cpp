@@ -33,7 +33,10 @@
 //
 // Usage:
 //   fhe-seedkey-lab [scaling=45] [first=55] [depth=8] [ringDim=16384] [dnum=3]
-//                   [rotations=1,2,4,8] [seed=42] [secure=0]
+//                   [rotations=1,2,4,8] [seed=42] [secure=0] [pre=0]
+//   pre=1 sets PREMode INDCPA, which makes the public key live over the extended
+//   modulus Q.P (OpenFHE 1.4.x defaults to this; 1.5+ defaults to NOT_SET, where
+//   the public key lives over Q). The lab handles both; pre=1 exercises the first.
 //   secure=1 sets HEStd_128_classic (then ringDim must be large enough);
 //   secure=0 uses HEStd_NotSet so the lab runs fast at a small toy ring.
 // Examples:
@@ -268,10 +271,12 @@ int main(int argc, char** argv) {
     auto rotations   = ParseRotations(argc > 6 ? argv[6] : "1,2,4,8");
     uint64_t seedInt = argc > 7 ? strtoull(argv[7], nullptr, 10) : 42;
     bool secure      = argc > 8 && atoi(argv[8]) != 0;
+    bool pre         = argc > 9 && atoi(argv[9]) != 0;
 
     std::cout << "== fhe-seedkey-lab: scaling " << scaling << "  first " << first << "  depth " << depth
               << "  ring " << ringDim << "  dnum " << dnum << "  rotations " << rotations.size() << "  seed "
-              << seedInt << (secure ? "  HEStd_128_classic" : "  HEStd_NotSet (toy)") << " ==" << std::endl;
+              << seedInt << (secure ? "  HEStd_128_classic" : "  HEStd_NotSet (toy)") << (pre ? "  PRE=INDCPA" : "")
+              << " ==" << std::endl;
 
     CCParams<CryptoContextCKKSRNS> p;
     p.SetMultiplicativeDepth(depth);
@@ -282,6 +287,8 @@ int main(int argc, char** argv) {
     p.SetNumLargeDigits(dnum);
     p.SetRingDim(ringDim);
     p.SetSecurityLevel(secure ? HEStd_128_classic : HEStd_NotSet);
+    if (pre)
+        p.SetPREMode(INDCPA);
     p.SetBatchSize(ringDim / 2);
     auto cc = GenCryptoContext(p);
     cc->Enable(PKE);
@@ -313,15 +320,38 @@ int main(int argc, char** argv) {
     // rotation key for automorphism index g starts at 1000 + 64*g.
     const auto& paramsPK = cryptoParams->GetParamsPK();
     const auto& paramsQ  = cryptoParams->GetElementParams();
-    if (paramsPK->GetParams().size() != paramsQ->GetParams().size()) {
-        std::cerr << "   public-key params have extra limbs (PRE mode?); this lab assumes paramsPK == Q" << std::endl;
-        return 2;
+    // The public key lives over paramsPK, which is Q (PREMode NOT_SET, the 1.5+
+    // default) or Q.P (PREMode INDCPA, the 1.4.x default). The library samples s
+    // over paramsPK and drops the extra limbs for storage, so an s read back from
+    // the secret key is over Q; extend it to paramsPK the way key switching extends
+    // sNew (coefficient-form limb 0, switched to each extra modulus).
+    DCRTPoly sPK(paramsPK, Format::EVALUATION, true);
+    {
+        const auto& pp = paramsPK->GetParams();
+        const uint32_t sizeQ = paramsQ->GetParams().size();
+        auto s0 = s.GetElementAtIndex(0);
+        s0.SetFormat(Format::COEFFICIENT);
+        for (uint32_t i = 0; i < pp.size(); ++i) {
+            if (i < sizeQ) {
+                auto tmp = s.GetElementAtIndex(i);
+                tmp.SetFormat(Format::EVALUATION);
+                sPK.SetElementAtIndex(i, std::move(tmp));
+            }
+            else {
+                auto tmp = s0;
+                tmp.SwitchModulus(pp[i]->GetModulus(), pp[i]->GetRootOfUnity(), 0, 0);
+                tmp.SetFormat(Format::EVALUATION);
+                sPK.SetElementAtIndex(i, std::move(tmp));
+            }
+        }
     }
+    std::cout << "   public key over " << paramsPK->GetParams().size() << " limbs ("
+              << (paramsPK->GetParams().size() == paramsQ->GetParams().size() ? "Q" : "Q.P") << ")" << std::endl;
     // pk: b = ns*e - a*s  (mirror of PKEBase::KeyGenInternal), a from the seeded expander
     DCRTPoly pkA = SeededUniform(paramsPK, seed, 0);
     DCRTPoly pkE(cryptoParams->GetDiscreteGaussianGenerator(), paramsPK, Format::EVALUATION);
     NativeInteger ns = cryptoParams->GetNoiseScale();
-    DCRTPoly pkB(std::move((pkE *= ns) -= (pkA * s)));
+    DCRTPoly pkB(std::move((pkE *= ns) -= (pkA * sPK)));
     auto appPk = std::make_shared<PublicKeyImpl<DCRTPoly>>(cc);
     appPk->SetPublicElements({pkB, pkA});
     appPk->SetKeyTag(keyTag);

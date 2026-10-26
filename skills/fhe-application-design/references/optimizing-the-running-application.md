@@ -136,7 +136,13 @@ IDENTICAL, every key kind's formula difference ≈ 2^4 (noise), all four
 ciphertext/key combinations at max error ≈ 6×10⁻⁸ (the library floor), and
 sizes at exactly 50%: public key 13 → 6.5 MiB, relin 51 → 25.5 MiB, five
 rotation keys 255 → 128 MiB. The same source passes against upstream OpenFHE
-1.5.1. Run it before relying on A2 and after every SDK upgrade:
+1.5.1 and 1.4.2. One version-dependent fact the lab surfaced: on OpenFHE 1.4.x
+the default `PREMode` is `INDCPA`, so the **public key lives over the extended
+modulus Q·P**, not Q (1.5+ defaults to `NOT_SET`, where it lives over Q). An
+application building its own public key must extend `s` to the public-key
+parameters the same way key switching extends the new secret; the lab does,
+and its optional ninth argument `pre=1` exercises that mode on any version.
+Run it before relying on A2 and after every SDK upgrade:
 
 ```bash
 docker run --rm ghcr.io/niobiuminc/fhe-dev:latest fhe-seedkey-lab                 # toy ring, seconds
