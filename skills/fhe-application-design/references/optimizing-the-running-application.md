@@ -103,7 +103,29 @@ derives `b` from it, and there is no hook to hand in your own `a`. So the server
 can only regenerate what the client chose, and the client can only choose it if
 the client computed `b` against it. **The application must generate every seeded
 object itself**, in `keygen`, from public API; reconstruction on the server is
-the easy half. Per object:
+the easy half.
+
+**Let the library compute `b`; only supply `a`.** OpenFHE's multiparty
+overloads exist to reuse a prior party's `a`, and they work just as well with a
+seeded one, so nothing has to be transcribed: enable `MULTIPARTY`, then
+`MultipartyKeyGen(placeholderPk, false, /*fresh=*/true)` with a placeholder
+public key whose second element is the seeded `a` returns a key pair whose
+`b = e − a·s` the library computed (with `fresh = true` it does not add the
+placeholder's `b`); `MultiKeySwitchGen(sk², sk, ekWithA)` returns the
+relinearization key with `ekWithA`'s seeded `a` vector; and
+`MultiEvalAutomorphismKeyGen(sk, mapWithA, indices)` does the same per rotation
+(these call `KeySwitchGen(old, new, ekPrev)`, which takes `a` from `ekPrev`
+instead of sampling). The encrypted-search browser client did it this way. The
+transcription recipe below is still worth knowing — it is what `fhe-seedkey-lab`
+checks, and it is the fallback on a build without the multiparty feature. A
+ready-made header exists too: `NiobiumInc/niobium-fhe-client-js` ships
+`seeded_keys.h` (namespace `nbseed`: `ExpandA`, `GenerateSeededAutomorphismKeys`,
+`RebuildSeededAutomorphismKeys`, ChaCha20 from a 32-byte seed, one stream per
+(automorphism index, digit, tower)) and `ciphertext_transport.h` for seeded
+ciphertexts; copy both ends from the **same commit**, because the stream
+assignment is the wire format.
+
+Per object, when doing it by hand:
 
 - *Public key.* Sample `a` from the application's seeded expander over the
   public-key parameters, sample `e` from the library's discrete Gaussian, set
@@ -187,6 +209,11 @@ its first run):
 7. **Expand before the trace.** The Fog trace carries evaluation keys, so the
    safe default is to expand on the CPU server before recording; whether the
    Fog can consume seeded keys directly is a question for the Niobium client.
+   On a FIDESlib/CUDA server, **retag every rebuilt key to the map's tag**: the
+   multiparty generator gives each key the permuted secret's fresh tag, the
+   CPU path never reads a key's own tag so nothing shows, but the CUDA engine
+   files each key under its own tag and the query then fails with "rotation
+   index not found" after an audit that saw every key.
 8. **Get the rotation-key pairing right.** A rotation key for automorphism
    index g is `KeySwitchGen(old = s, new = s(X^(g⁻¹)))`, because the library
    key-switches *first* and applies the automorphism afterwards. The natural
@@ -277,8 +304,10 @@ ciphertext at level ℓ reads only the key's Q limbs that are still alive at tha
 level (the first `sizeQℓ` of them), the P limbs, and only the digits that still
 exist at that width. In OpenFHE this is literal: `EvalFastKeySwitchCoreExt`
 indexes the key with `i` for `i < sizeQℓ` and with `i + (sizeQ − sizeQℓ)` for the
-P limbs, and loops over `digits->size()` digits. Every other limb of the key is
-dead weight on the wire. So a rotation key that the circuit only ever applies
+P limbs, and loops over `digits->size()` digits: with α = `numPerPartQ` =
+sizeQ/dnum towers per digit, a ciphertext with L towers left reads ⌈L/α⌉
+digits, and within each only towers [0, L) plus the P towers. Every other limb
+of the key is dead weight on the wire. So a rotation key that the circuit only ever applies
 to a **narrow** ciphertext, late in the circuit, can be shipped with just the
 towers that key switch reads, and the server rebuilds a full-shape key with
 zeros in the omitted positions, which the indexing above never touches.
@@ -287,10 +316,14 @@ This came out of the encrypted-search app's browser client (branch
 `feat/web-client`, `common/seeded_keys.h`, the `NBSK` blob in
 `docs/PROTOCOL.md`): the circuit's packed gather runs its four rotations on the
 sharpened selector, a ciphertext with three towers left, so those four keys were
-trimmed from 42 MB each to about 5 MB (168 → 20 MB, ~8×), while the nine keys
-the scoring circuit applies to wide ciphertexts stayed full width. It composes
-with A2: ship the `b` halves of the kept towers plus the seed, and regenerate
-`a` for the kept towers only.
+trimmed from 42 MiB each to 5 MiB (one digit × (3 + 7 P) towers × 65,536 × 8 B
+at ring 2^16, depth 13, dnum 2; 168 → 20 MB, ~8×), while the nine keys the
+scoring circuit applies to wide ciphertexts stayed full width. The whole key
+set at 13 rotations went 602 → 265 MB (relin 42 + rotations 189 + 20 + public
+key 14), against 343 MB for the same keys seeded but untrimmed. It composes with
+A2: ship the `b` halves of the kept towers plus the seed, and regenerate `a` for
+the kept towers only. Re-expansion on the server measured 0.7–0.9 s for nine
+full-width keys and 0.16–0.3 s for the trimmed ones, single-threaded.
 
 - **Saves:** per trimmed key, roughly (kept towers ÷ total towers) × (kept
   digits ÷ total digits); large for keys used only after most of the depth is
@@ -318,14 +351,21 @@ with A2: ship the `b` halves of the kept towers plus the seed, and regenerate
   is the app's own control run, not the lab.
 
 **The pitfall that found the rule.** The first trim was sized by counting
-squarings and came out one tower short: the gather runs on the ciphertext **at
-the moment of the key switch**, which still carries the tower the *next*
-multiply will consume, so the sharpened selector sat at three towers, not two.
-Keys trimmed to two limbs decrypted to noise on every variant while the
-untrimmed ones were exact, and nothing complained. Size the trim from the
-ciphertext's width when the rotation is performed, measured by running the
-circuit or derived from the level schedule with the next rescale *not* yet
-applied, and let the server audit it.
+squarings and came out one tower short, and the cause is a library fact worth
+knowing on its own: under FLEXIBLEAUTO and FIXEDAUTO, an explicit `Rescale` /
+`ModReduce` call is a **no-op**; the automatic modes rescale inside the *next*
+multiply. So the code's `Rescale` before the gather did nothing, the rotations
+ran on the three-tower ciphertext, and keys trimmed to two limbs decrypted to
+"approximation error is too high" on every variant while the untrimmed ones
+were exact. Size the trim from the ciphertext's width **at the moment of the
+key switch**, measured by running the circuit (the app sends that level with
+the request) or derived from the level schedule with the next rescale *not*
+yet applied; let the server audit it; and on a backend where `Rescale` is real
+(FIDESlib), the wider key is still correct. Validation that held: identical
+best match, score and verified count against the native client on three
+queries at two corpus scales (10k rows on CPU, 262k rows on CUDA), plus the
+sibling repository's `tests/test_seeded_keys.cpp`, which checks rebuilt whole
+and trimmed keys against the library's own at N = 4096.
 
 ## B. Shrinking the per-request upload
 
@@ -408,7 +448,11 @@ and `e` is fresh library Gaussian noise. The ciphertext class exposes
 `SetElements` and setters for every metadata field. The server rebuilds `a`
 from the seed, installs it, and proceeds. All eight A2 pitfalls apply,
 especially the first: the expander is never the library's global PRNG, which
-also draws `e`. The public-key path of `fhe-seedkey-lab` exercises this exact
+also draws `e`. One rule is specific to ciphertexts and is a **leak if
+broken**: one seed per *key set* is fine, since the nonce separates index,
+digit and tower, but **every seeded ciphertext needs a fresh seed**. Two
+ciphertexts under one key that share an `a` reveal the difference of their
+plaintexts to anyone holding both. The public-key path of `fhe-seedkey-lab` exercises this exact
 formula (`b = −a·s + e`, plus `m` here), so a passing lab covers B3's
 arithmetic as well.
 
@@ -521,8 +565,11 @@ better the download for free.
   words, so packing each tower's coefficients at ⌈log₂ qᵢ⌉ bits is a
   deterministic, lossless saving of (64 − w)/64: ~30% for 45-bit scaling
   primes, ~22% at 50 bits, ~6% for 60-bit first and P primes, and the blend
-  of a real chain lands in between (the encrypted-search browser client's
-  seeded query went from 7.0 to 5.9 MB this way, `common/ciphertext_transport.h`).
+  of a real chain lands in between. The encrypted-search browser client's
+  query is the measured chain: 14.68 MB as a public-key ciphertext, 7.34 MB
+  seeded under the secret key (B3, one polynomial in 64-bit words), 5.90 MB
+  with that polynomial bit-packed at 60 bits for the first tower and 50 for
+  the rest (`common/ciphertext_transport.h`), the extra 20%.
   It applies to every polynomial on the wire, keys and ciphertexts alike,
   composes with A2/A5/B3, costs a trivial pack/unpack pass, and needs a
   versioned wire format. **Entropy coding (gzip, zstd) on top of that is
