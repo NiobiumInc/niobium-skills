@@ -2234,7 +2234,12 @@ any of them.
   or bootstrapped circuits, **hierarchical rotation keys** (ePrint 2022/532),
   where the client ships a small base set and the server derives the rest at
   setup, cutting client key generation and the setup transfer by one to two
-  orders of magnitude at the cost of derivation noise and a build.
+  orders of magnitude at the cost of derivation noise and a build; and
+  **level-trimmed keys** for rotations the circuit only performs on narrow,
+  late ciphertexts, shipping just the towers that key switch reads (about 8×
+  on such keys), sized from the ciphertext's width at the moment of the
+  switch and audited by the server, since a key trimmed one tower too far
+  decrypts to noise without an error.
 - **Per-request upload (the recurring cost).** In order from free to
   project-sized: **level-match the inputs** to the first segment's starting
   level instead of encrypting fresh (free, and large in bootstrapped designs);
@@ -2254,9 +2259,11 @@ any of them.
   server operation (the niobium-client examples already do this), emit margins
   and normalized outputs, and pack several outputs into one ciphertext where
   the layout allows.
-- **Serialization and transport.** Binary serialization only; no
-  general-purpose compression (RNS limbs do not compress; measure once and
-  record it); keys shipped once and addressed by fingerprint; batches streamed.
+- **Serialization and transport.** Binary serialization only; **bit-pack each
+  tower at its prime's width** (a lossless 6–30% on every key and ciphertext,
+  depending on the prime sizes); no entropy coding on top (the packed words
+  are uniform; measure once and record it); keys shipped once and addressed
+  by fingerprint; batches streamed.
 - **Server time and memory.** Circuit-structure work from
   `references/performance-and-packing.md`: packing, batching, rotation
   frugality, `dnum`, depth. A packing change is a circuit change and re-enters

@@ -245,8 +245,8 @@ reads "no gain here".
 
 - **Saves:** the client's key generation time and the setup transfer, by one
   to two orders of magnitude on rotation-heavy circuits; composes with A2
-  (seed-expand the base set) since the two attack different factors of the
-  same product.
+  (seed-expand the base set) and A5 (trim the derived keys the server only
+  uses late) since the three attack different factors of the same product.
 - **Costs:** a one-time derivation pass on the server per key pair (key
   switching, offline); **derived keys carry the noise of their derivation**,
   so a circuit that was noise-marginal re-runs the Stage 6 decode-safety
@@ -267,6 +267,65 @@ reads "no gain here".
   equals the same rotation under a client-generated key within noise (this
   bounds the derivation noise directly), then the normal gate on the worst-case
   slot population, since the extra noise is where a marginal decode tips.
+
+### A5. Level-trimmed evaluation keys (ship only the limbs a key switch reads)
+
+A2 and A4 shrink keys by halving or deriving them. This one shrinks a key by
+**omitting the limbs the circuit never reads from it**. A hybrid key-switching
+key is generated over the full modulus Q·P, but a key switch performed on a
+ciphertext at level ℓ reads only the key's Q limbs that are still alive at that
+level (the first `sizeQℓ` of them), the P limbs, and only the digits that still
+exist at that width. In OpenFHE this is literal: `EvalFastKeySwitchCoreExt`
+indexes the key with `i` for `i < sizeQℓ` and with `i + (sizeQ − sizeQℓ)` for the
+P limbs, and loops over `digits->size()` digits. Every other limb of the key is
+dead weight on the wire. So a rotation key that the circuit only ever applies
+to a **narrow** ciphertext, late in the circuit, can be shipped with just the
+towers that key switch reads, and the server rebuilds a full-shape key with
+zeros in the omitted positions, which the indexing above never touches.
+
+This came out of the encrypted-search app's browser client (branch
+`feat/web-client`, `common/seeded_keys.h`, the `NBSK` blob in
+`docs/PROTOCOL.md`): the circuit's packed gather runs its four rotations on the
+sharpened selector, a ciphertext with three towers left, so those four keys were
+trimmed from 42 MB each to about 5 MB (168 → 20 MB, ~8×), while the nine keys
+the scoring circuit applies to wide ciphertexts stayed full width. It composes
+with A2: ship the `b` halves of the kept towers plus the seed, and regenerate
+`a` for the kept towers only.
+
+- **Saves:** per trimmed key, roughly (kept towers ÷ total towers) × (kept
+  digits ÷ total digits); large for keys used only after most of the depth is
+  spent, nothing for keys used on fresh ciphertexts. Rotate-and-sum at the end
+  of a deep circuit and the gather/selector rotations of a retrieval circuit
+  are the typical winners; a relin key used at every level is not.
+- **Costs:** none at run time. A design-time dependency on the circuit's
+  **level schedule**, which is the fragile part: the trim is sized from the
+  level at which each key switch actually happens, and a circuit change (one
+  more rescale, a reordering, FLEXIBLEAUTO moving a rescale) invalidates it
+  **silently**. A key trimmed one tower too far does not raise; it produces a
+  ciphertext that decrypts to noise.
+- **Needs:** a wire format that carries, per key, which towers are present
+  (version it), a receiver that rebuilds full-shape polynomials, and an
+  **audit at the use site**: the server knows the level at which it performs
+  each rotation, so it refuses a key narrower than `sizeQ − level` for that
+  rotation, and refuses any trimming of a key it also applies to a wide
+  ciphertext. Without a declared level, nothing may be trimmed. The app ships
+  the level in its request so the audit has a number to check against.
+- **Security:** none lost; the omitted towers are public material the server
+  never reads.
+- **Re-validate:** a control run with the same keys untrimmed (the browser
+  client's `--no-trim`) must produce byte-identical responses; then the normal
+  gate. `fhe-seedkey-lab` does not yet exercise trimming, so this row's evidence
+  is the app's own control run, not the lab.
+
+**The pitfall that found the rule.** The first trim was sized by counting
+squarings and came out one tower short: the gather runs on the ciphertext **at
+the moment of the key switch**, which still carries the tower the *next*
+multiply will consume, so the sharpened selector sat at three towers, not two.
+Keys trimmed to two limbs decrypted to noise on every variant while the
+untrimmed ones were exact, and nothing complained. Size the trim from the
+ciphertext's width when the rotation is performed, measured by running the
+circuit or derived from the level schedule with the next rescale *not* yet
+applied, and let the server audit it.
 
 ## B. Shrinking the per-request upload
 
@@ -456,9 +515,20 @@ better the download for free.
 - **Binary serialization only.** OpenFHE's `SerType::JSON` is several times the
   size of `SerType::BINARY` for the same object; the four programs should already
   use BINARY, so confirm it rather than assume it.
-- **General-purpose compression does not help.** RNS limbs are uniformly
-  distributed words; gzip/zstd gain a few percent at best and cost CPU on both
-  ends. Measure once, record the number in the ledger, and do not ship it.
+- **Bit-pack limbs at the modulus width; do not entropy-code them.** Two
+  different things hide under "compress the bytes". An RNS limb's coefficients
+  are uniform modulo a prime of width *w* bits but are serialized as 64-bit
+  words, so packing each tower's coefficients at ⌈log₂ qᵢ⌉ bits is a
+  deterministic, lossless saving of (64 − w)/64: ~30% for 45-bit scaling
+  primes, ~22% at 50 bits, ~6% for 60-bit first and P primes, and the blend
+  of a real chain lands in between (the encrypted-search browser client's
+  seeded query went from 7.0 to 5.9 MB this way, `common/ciphertext_transport.h`).
+  It applies to every polynomial on the wire, keys and ciphertexts alike,
+  composes with A2/A5/B3, costs a trivial pack/unpack pass, and needs a
+  versioned wire format. **Entropy coding (gzip, zstd) on top of that is
+  pointless**: the packed words are uniformly random, so it gains a few
+  percent at best and costs CPU on both ends. Measure once, record the number
+  in the ledger, and do not ship it.
 - **Ship keys once, address them by fingerprint.** Setup material (context,
   public key, evaluation keys) ships once per key pair; every request carries a
   key fingerprint so the server can refuse a mismatch instead of producing
@@ -551,6 +621,7 @@ heading of its own. One row each:
 | B1 level-matched inputs | upload / request | 26 MiB × 15 | 9 MiB × 15 | none | same bar | applied |
 | B2 depleted inputs | upload / request | 9 MiB × 15 | 2 MiB × 15 | +15 bootstraps/request, +1.2 GiB boot keys at server | twin re-derived with refresh noise; same bar | rejected: server did not already bootstrap, key cost > saving |
 | A2 seed-expanded keys | setup transfer | 640 MiB | — | needs seeded serialization | not available in installed SDK | deferred |
+| A5 level-trimmed gather keys | setup transfer | 4 × 42 MB | 4 × 5 MB | server audits trim against use-site level | --no-trim control byte-identical; same bar | applied |
 
 Rejected and deferred rows matter as much as applied ones: they are the record
 that the trade was considered, and the "needs" column is the shopping list for
