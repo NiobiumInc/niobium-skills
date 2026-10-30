@@ -1,6 +1,6 @@
 {
   "name": "fhe-application-design",
-  "version": "0.15.0",
-  "description": "Design and build Fully Homomorphic Encryption (FHE) applications with OpenFHE (optional Niobium DSL path). A twelve-stage methodology (0-11) from build environment and privacy model through the faithful twin, encrypted implementation, protocol specification, a simulation-validated Niobium Fog deployment, and optimization of the running application — including empirically-grounded CKKS bootstrapping guidance and the fhe-boot-lab probe.",
+  "version": "0.16.0",
+  "description": "Design and build Fully Homomorphic Encryption (FHE) applications with OpenFHE (optional Niobium DSL path). A twelve-stage methodology (0-11) from build environment and privacy model through the faithful twin, encrypted implementation, protocol specification, a simulation-validated Niobium Fog deployment, optimization of the running application, and a measured method for polynomial approximation of non-linear functions — including empirically-grounded CKKS bootstrapping guidance and the fhe-boot-lab probe.",
   "skills": ["./"]
 }
