@@ -7,8 +7,9 @@
 # and installs the SDK, so the four-program app builds against it and, run under
 # a niobium::compiler() session, generates the FHETCH trace for the Fog. The twin
 # and any PyTorch reference also run here (numpy / scipy / scikit-learn / CPU
-# torch). Two probes are baked in: `fhe-boot-lab` (Stage 6, bootstrap accuracy)
-# and `fhe-seedkey-lab` (Stage 11, application-owned seeded keys).
+# torch). Three probes are baked in: `fhe-boot-lab` (Stage 6, bootstrap accuracy),
+# `fhe-seedkey-lab` (Stage 11, application-owned seeded keys) and `fhe-cheb-lab`
+# (Stages 3-7, approximation bias vs. CKKS evaluation noise of a polynomial).
 #
 # This Dockerfile lives in the skill and builds the image directly. HAZE (the
 # GPU C API) is intentionally omitted.
@@ -102,6 +103,25 @@ RUN OFHE=/opt/niobium-client/vendor/lib/openfhe \
         -L"$NC/lib" -lnbfhetch \
         -Wl,-rpath,"$OFHE/lib" -Wl,-rpath,"$NC/lib" \
  && rm /tmp/seedkey_lab.cpp
+
+# Approximation precision lab (Stages 3-7): evaluates a Chebyshev series under
+# CKKS and reports approximation bias (polynomial vs. function) and evaluation
+# noise (encrypted vs. plaintext polynomial) as two numbers, plus a scaling
+# sweep. Pair it with scripts/cheb_fit.py, whose emitted coefficients it reads:
+#   fhe-cheb-lab <func|coeffs:FILE> <a> <b> <degree> [scaling first depth ring secure samples sweep]
+COPY cheb_lab.cpp /tmp/cheb_lab.cpp
+RUN OFHE=/opt/niobium-client/vendor/lib/openfhe \
+ && NC=/opt/niobium-client/vendor/lib/niobium-client \
+ && g++ -O2 -std=c++17 /tmp/cheb_lab.cpp -o /usr/local/bin/fhe-cheb-lab \
+        -I"$OFHE/include/openfhe" \
+        -I"$OFHE/include/openfhe/core" \
+        -I"$OFHE/include/openfhe/pke" \
+        -I"$OFHE/include/openfhe/binfhe" \
+        -I"$OFHE/include/openfhe/third-party/include" \
+        -L"$OFHE/lib" -lOPENFHEpke -lOPENFHEcore -lOPENFHEbinfhe \
+        -L"$NC/lib" -lnbfhetch \
+        -Wl,-rpath,"$OFHE/lib" -Wl,-rpath,"$NC/lib" \
+ && rm /tmp/cheb_lab.cpp
 
 # Interactive conveniences: an in-container editor, and git-lfs so bind-mounted
 # project repos can fetch their LFS-tracked inputs (datasets, model blobs) from

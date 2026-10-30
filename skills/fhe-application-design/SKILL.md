@@ -17,7 +17,7 @@ license: Apache-2.0
 compatibility: OpenFHE (C++ or Python); Niobium nb FHE DSL (niobium-client)
 metadata:
   author: Niobium
-  version: 0.15.0
+  version: 0.16.0
 ---
 
 # FHE Application Design ("FHEanna")
@@ -751,6 +751,23 @@ structure already in place:
    to the model as given — a polynomial approximation is only as good as the
    match between its domain and the operands that actually reach it.
 
+   **How you fit matters as much as the degree.** OpenFHE's default
+   coefficients are plain Chebyshev interpolation over the whole interval; at
+   the same degree, a least-squares fit weighted by the measured operand
+   distribution, or a minimax fit where the worst case is what bites, often
+   clears a floor that interpolation misses, at zero depth cost. Non-smooth
+   targets (sign, step, ReLU, max, comparison) converge only algebraically
+   under a single polynomial and want **composite** low-degree polynomials;
+   reciprocals and inverse square roots want a **Newton iteration** from a cheap
+   initial guess rather than a polynomial of 1/x. The method, the error
+   taxonomy (approximation bias vs. CKKS evaluation noise vs. downstream
+   amplification), and the recipes per function family are in
+   `references/approximating-nonlinear-functions.md`. Two tools back it:
+   `scripts/cheb_fit.py` compares the fits on your measured operands and emits
+   coefficients in OpenFHE's convention for both the twin and the circuit, and
+   the image's `fhe-cheb-lab` evaluates a series under CKKS and reports bias and
+   noise as two numbers.
+
 6. Constrain data types and precision. Move from floating-point to integer or
    fixed-point arithmetic. Aim for 32 bits or less of precision. Consider
    non-linear scaling of inputs to reduce dynamic range.
@@ -853,11 +870,16 @@ that Stage 3 requires:
    operating range from rare outliers.
 2. **Budget the degree.** From the depth budget (Stages 5–6) and the number of
    approximations on the critical path, back out the maximum degree affordable
-   per call (`chebyshev` charges `ceil(log2(degree+1)) + 1` levels).
+   per call (`chebyshev` charges `ceil(log2(degree+1)) + 1` levels; measured on
+   OpenFHE the cost steps at the Paterson–Stockmeyer table degrees 5, 13, 27,
+   59, 119, 247, so pick those and never round up to 2^k − 1, which costs the
+   next level — see `references/approximating-nonlinear-functions.md`).
 3. **Estimate achievable accuracy — on the real polynomial, not the twin.**
    Build the actual Chebyshev approximation at that maximum degree over the
-   measured range, run the forward pass with it in plaintext, and compare to the
-   plaintext model. **Do not use the generated `_ref` cleartext twins for this
+   measured range (with `scripts/cheb_fit.py`, which compares interpolation,
+   least-squares, data-weighted and minimax fits on the measured operands and
+   reports the sample-max and p99.9 error and the coefficient 1-norm), run the
+   forward pass with it in plaintext, and compare to the plaintext model. **Do not use the generated `_ref` cleartext twins for this
    measurement**: the twins apply the *true* activation, so they report ~perfect
    accuracy and hide exactly the polynomial degradation you are trying to bound
    (this masking is what lets domain problems survive to the encrypted run). If
@@ -1176,6 +1198,12 @@ exact comparison is not directly possible. Common approaches include:
   (sigmoid for thresholding, Gaussian impulse for equality) using Chebyshev
   series. Higher depth but more flexible, good for comparison against
   continuous thresholds.
+- *Composite minimax polynomials for sign and comparison*: a single polynomial
+  resolves a step only to a width of about 1/degree, so for exact-looking
+  comparisons compose several low-degree odd polynomials instead (Cheon, Kim
+  and Kim, ePrint 2019/1234; Lee, Lee, No and Kim, ePrint 2020/834); iterated
+  squaring is the crude member of this family. The depth-vs-accuracy table is
+  in `references/approximating-nonlinear-functions.md`.
 
 **Performance is decided here.** Packing, amortization, and key-switch-frugality
 are structural circuit choices, not a later tuning pass. Before sizing depth,
@@ -1303,7 +1331,9 @@ circuit fails to decode ("approximation error too high") when the live modulus
 left *after* the circuit consumes its multiplicative levels no longer exceeds
 the scaled message plus a noise margin — not because intermediate values are
 "large." Two failure modes look identical at the `Decode` call but need
-opposite fixes:
+opposite fixes (for a single polynomial, `fhe-cheb-lab` tells them apart in
+seconds: its bias number is fixed by the fit, its noise number falls about one
+bit per scaling bit, and its scaling sweep shows which one you are looking at):
 
 - **Per-operation precision erosion** — operands are well inside the activation
   domain, but the per-level precision (scaling modulus) is too coarse, so noise
@@ -1661,9 +1691,11 @@ the references directory show concrete parameter selections with rationale.
 
 By this point Stages 4–6 have fixed the scheme, the circuit, and the parameters,
 so the twin can finally be *completed*. The **faithful twin** is a plaintext
-(e.g. numpy) model of the exact circuit — the *same* Chebyshev polynomials, the
-*same* fixed-point quantization step (Δ = 2^scaling), the *same* packing and
-rescale points the FHE program will run. It is not the reference (that is the
+(e.g. numpy) model of the exact circuit — the *same* Chebyshev polynomials (the
+same coefficient vectors, in OpenFHE's `c₀/2 + Σ cₖTₖ` convention, which
+`scripts/cheb_fit.py --emit` writes for both sides), the *same* fixed-point
+quantization step (Δ = 2^scaling), the *same* packing and rescale points the
+FHE program will run. It is not the reference (that is the
 *ideal* algorithm); the twin predicts encrypted behavior modulo random noise.
 
 This is the same twin you were already sweeping in Stages 5–6 — there it was the
@@ -2234,7 +2266,12 @@ any of them.
   or bootstrapped circuits, **hierarchical rotation keys** (ePrint 2022/532),
   where the client ships a small base set and the server derives the rest at
   setup, cutting client key generation and the setup transfer by one to two
-  orders of magnitude at the cost of derivation noise and a build.
+  orders of magnitude at the cost of derivation noise and a build; and
+  **level-trimmed keys** for rotations the circuit only performs on narrow,
+  late ciphertexts, shipping just the towers that key switch reads (about 8×
+  on such keys), sized from the ciphertext's width at the moment of the
+  switch and audited by the server, since a key trimmed one tower too far
+  decrypts to noise without an error.
 - **Per-request upload (the recurring cost).** In order from free to
   project-sized: **level-match the inputs** to the first segment's starting
   level instead of encrypting fresh (free, and large in bootstrapped designs);
@@ -2254,9 +2291,11 @@ any of them.
   server operation (the niobium-client examples already do this), emit margins
   and normalized outputs, and pack several outputs into one ciphertext where
   the layout allows.
-- **Serialization and transport.** Binary serialization only; no
-  general-purpose compression (RNS limbs do not compress; measure once and
-  record it); keys shipped once and addressed by fingerprint; batches streamed.
+- **Serialization and transport.** Binary serialization only; **bit-pack each
+  tower at its prime's width** (a lossless 6–30% on every key and ciphertext,
+  depending on the prime sizes); no entropy coding on top (the packed words
+  are uniform; measure once and record it); keys shipped once and addressed
+  by fingerprint; batches streamed.
 - **Server time and memory.** Circuit-structure work from
   `references/performance-and-packing.md`: packing, batching, rotation
   frugality, `dnum`, depth. A packing change is a circuit change and re-enters
@@ -2330,6 +2369,7 @@ self-contained and can be read independently.
 | `references/deep-models-under-fhe.md` | Stages 3, 5, 6: deep sequential models (transformers, deep nets) — per-layer FHE anatomy and rules, and the (unsolved) noise-growth-across-depth problem with its partial mitigations and the co-design escalation |
 | `references/performance-and-packing.md` | Stages 5, 6: FHE performance — SIMD packing/data layout, batch amortization, throughput vs latency, the key-switch-frugal circuit (BSGS, hoisting, key-affinity, dnum), the plaintext/weight encode-ahead pipeline, and the order to apply them |
 | `references/openfhe-examples-catalog.md` | All stages: catalog of specific OpenFHE examples mapped to design patterns |
+| `references/approximating-nonlinear-functions.md` | Stages 3, 5, 6, 7: replacing a non-linear function by a polynomial — the three errors (approximation bias, CKKS evaluation noise, downstream amplification), fitting methods and when each wins, composite polynomials for sign/ReLU/comparison, Newton iteration for reciprocals, symmetry, the coefficient-norm noise rule, polynomial-aware calibration and fine-tuning, and the `cheb_fit.py` / `fhe-cheb-lab` workflow |
 | `references/optimizing-the-running-application.md` | Stage 11: optimizing the running application — the sizing model, seed-expanded keys, level-matched and depleted inputs, hybrid FHE (input transciphering), result compression, serialization, the optimization ledger, and how to re-validate and explain each trade |
 
 ## Key Principles
@@ -2374,8 +2414,8 @@ Throughout the design process, keep these principles in mind:
   (silent no-ops, correction factors) are invisible to the twin — a design
   can match the reference perfectly in plaintext and still produce garbage
   encrypted. Each runtime property needs its own cheap empirical probe
-  (`fhe-boot-lab`, `fhe-seedkey-lab`, the slot-level simulation, instrumented
-  decrypts) before and during the encrypted build.
+  (`fhe-boot-lab`, `fhe-seedkey-lab`, `fhe-cheb-lab`, the slot-level
+  simulation, instrumented decrypts) before and during the encrypted build.
 
 - **Depth is the critical resource.** Multiplicative depth drives parameter
   sizes, which drive memory and performance. Every design decision should

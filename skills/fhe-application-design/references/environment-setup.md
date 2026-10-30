@@ -141,6 +141,17 @@ docker run --rm ghcr.io/niobiuminc/fhe-dev:latest fhe-seedkey-lab               
 docker run --rm ghcr.io/niobiuminc/fhe-dev:latest fhe-seedkey-lab 45 55 12 65536 3 1,2,4,8,16 7 1   # production-shaped
 ```
 
+And **`fhe-cheb-lab`**, used from Stage 3 on whenever a non-linear function is
+replaced by a polynomial: it evaluates a Chebyshev series under CKKS and reports
+the approximation bias (polynomial vs. function) and the evaluation noise
+(encrypted vs. plaintext polynomial) as two numbers, so you know whether to fix
+the fit or the parameters. It reads the coefficients `scripts/cheb_fit.py` emits:
+
+```bash
+docker run --rm ghcr.io/niobiuminc/fhe-dev:latest fhe-cheb-lab sigmoid -8 8 27                         # OpenFHE's own fit
+docker run --rm -v "$PWD":/work -w /work ghcr.io/niobiuminc/fhe-dev:latest fhe-cheb-lab coeffs:fit.txt:sigmoid -8 8 27 45 55 0 65536 1 operands.txt
+```
+
 ## Path B: local niobium-client build
 
 Build niobium-client from source once on the host, then point the skill at the
@@ -268,7 +279,8 @@ g++ -O2 -std=c++17 "$SKILL_ENV/boot_lab.cpp" -o ~/.local/bin/fhe-boot-lab \
 **Seeded-key lab (Stage 11), only if the design ships half-size keys.** Same
 recipe, same flags: compile `"$SKILL_ENV/seedkey_lab.cpp"` to
 `~/.local/bin/fhe-seedkey-lab` with the command above, substituting the source
-and output names.
+and output names. **Approximation lab (Stages 3-7)**: likewise
+`"$SKILL_ENV/cheb_lab.cpp"` to `~/.local/bin/fhe-cheb-lab`.
 
 ## How the build environment is used later (Stages 8 and 10)
 

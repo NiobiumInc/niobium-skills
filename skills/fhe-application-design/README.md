@@ -107,7 +107,10 @@ skills/fhe-application-design/
 ├── environment/              # Stage 0 build-and-run environment
 │   ├── Dockerfile            # Builds the FHE-dev container (instrumented OpenFHE + libnbfhetch)
 │   ├── boot_lab.cpp          # fhe-boot-lab: measures real CKKS bootstrap accuracy (Stage 6)
-│   └── seedkey_lab.cpp       # fhe-seedkey-lab: proves application-owned seeded keys (Stage 11)
+│   ├── seedkey_lab.cpp       # fhe-seedkey-lab: proves application-owned seeded keys (Stage 11)
+│   └── cheb_lab.cpp          # fhe-cheb-lab: approximation bias vs. CKKS evaluation noise (Stages 3-7)
+├── scripts/
+│   └── cheb_fit.py           # fits and compares polynomial approximations on measured operands
 ├── references/               # Domain knowledge files read on demand
 │   ├── environment-setup.md
 │   ├── explaining-fhe-to-newcomers.md
@@ -127,7 +130,8 @@ skills/fhe-application-design/
 │   ├── debugging-the-encrypted-run.md
 │   ├── deep-models-under-fhe.md
 │   ├── performance-and-packing.md
-│   └── optimizing-the-running-application.md
+│   ├── optimizing-the-running-application.md
+│   └── approximating-nonlinear-functions.md
 └── evals/                    # Evaluation suite for skill quality
     └── evals.json
 ```
@@ -138,7 +142,9 @@ The `evals/` directory contains five scenarios (credit scoring, credential searc
 
 ## Version History
 
-**v0.15.0 (current)** — Adds Stage 11, optimizing the running application: a post-deployment pass that starts from the measured boundary sizes and timings, applies one optimization at a time behind a switch, and re-validates each to the Stage 7 bar. The new `references/optimizing-the-running-application.md` covers the sizing model and the catalogue — seed-expanded evaluation keys, level-matched and fully depleted inputs (bootstrapped on arrival), secret-key encryption, hybrid FHE (symmetric input transciphering with Rubato/HERA), result compression, serialization and transport — each with its savings, costs, prerequisites, library-support status, and re-validation steps, plus the optimization ledger for the results report. The FHE-dev image gains a second probe, `fhe-seedkey-lab`, which proves application-owned seeded key generation (half-size public, relinearization and rotation keys) re-expands bit-identically and computes at the library's noise floor for the installed OpenFHE build. The eval suite grows to six scenarios with a per-request traffic-reduction case.
+**v0.16.0 (current)** — Approximation error gets its own method. A new `references/approximating-nonlinear-functions.md` separates the three errors a polynomial stand-in produces (approximation bias, CKKS evaluation noise, downstream amplification), compares fitting methods (OpenFHE's Chebyshev interpolation, least squares, data-weighted least squares, discrete minimax) and when each wins, covers composite polynomials for sign/ReLU/comparison, Newton iteration for reciprocals and inverse square roots, symmetry, the coefficient-norm noise rule, and polynomial-aware calibration and fine-tuning. Two tools back it: `scripts/cheb_fit.py` fits and compares methods on the measured operand distribution and emits coefficients in OpenFHE's convention for both the circuit and the twin, and `fhe-cheb-lab` in the image evaluates a series under CKKS and reports bias and noise as two numbers with a scaling sweep. A seventh eval scenario exercises the method.
+
+**v0.15.0** — Adds Stage 11, optimizing the running application: a post-deployment pass that starts from the measured boundary sizes and timings, applies one optimization at a time behind a switch, and re-validates each to the Stage 7 bar. The new `references/optimizing-the-running-application.md` covers the sizing model and the catalogue — seed-expanded evaluation keys, hierarchical and level-trimmed rotation keys, level-matched and fully depleted inputs (bootstrapped on arrival), secret-key encryption, hybrid FHE (symmetric input transciphering with Rubato/HERA), result compression, bit-packed serialization and transport — each with its savings, costs, prerequisites, library-support status, and re-validation steps, plus the optimization ledger for the results report. The FHE-dev image gains a second probe, `fhe-seedkey-lab`, which proves application-owned seeded key generation (half-size public, relinearization and rotation keys) re-expands bit-identically and computes at the library's noise floor for the installed OpenFHE build. The eval suite grows to six scenarios with a per-request traffic-reduction case.
 
 **v0.14.0** — Stage 0 gains a second way to provision the build-and-run environment: a local niobium-client source build on the host, alongside the FHE-dev image. One mode-aware run harness (keyed on `NIOBIUM_CLIENT_DIR`) drives both, so the build and run commands are identical whether the SDK comes from the image or a local checkout. The FHE-dev image is published for both `linux/amd64` and `linux/arm64`, so Apple Silicon hosts run it natively.
 
@@ -156,13 +162,14 @@ Changes across iterations:
 
 ## Maintainer Notes
 
-If you modify SKILL.md, re-run the eval suite (`evals/evals.json`) to check for regressions. It holds six scenarios, each pairing a prompt with an `expected_output` that describes the design decisions a correct walkthrough must reach:
+If you modify SKILL.md, re-run the eval suite (`evals/evals.json`) to check for regressions. It holds seven scenarios, each pairing a prompt with an `expected_output` that describes the design decisions a correct walkthrough must reach:
 
 - **Credit scoring** (independent encryptors, output integrity problem, logistic regression circuit) — exercises transciphering, packing-privacy consistency, SIMD honesty
 - **Credential search** (single encryptor for database, no integrity problem, set membership) — exercises column-major packing, scale handling, comparison circuit design
 - **Salary statistics** (multi-party, threshold/shared key considerations, aggregation) — exercises multi-party awareness, packing-privacy with shared keys, low-depth circuit
 - **Fraud-flag checker** (niobium-client repo, single encryptor, server data stays plaintext, CKKS nearest-match) — exercises end-to-end implementation and a squared-distance/iterated-squaring circuit
 - **Encrypted voting tally** (nb DSL, independent encryptors) — exercises recognizing that exact integer results need BFV while the nb DSL is CKKS-only, and routing away from a naive DSL implementation accordingly
+- **Sigmoid operand range vs. degree budget** (a trained MLP whose sigmoid operands span far beyond their p99.9 band, with a depth budget that caps the degree at 27) — exercises the approximation method: measuring operands, data-weighted or minimax fits at the same degree, separating bias from noise with the lab, recalibrating the decision threshold, and refusing to buy accuracy with depth
 - **Per-request traffic reduction** (a passing, deployed CKKS app whose 200 MB upload is the complaint) — exercises Stage 11: gating on a working application, starting from the measured ledger, ordering the candidates honestly (result compression is free, level-matching gains nothing in a tight design, depleted-input bootstrapping and hybrid FHE are costed as trades), one change at a time with re-validation to the Stage 7 tolerance, and presenting the trades in the user's terms
 
 The three design scenarios (credit scoring, credential search, salary statistics) target the protocol-level checks that distinguish the skill from an unguided baseline — output integrity, packing-privacy consistency, and honest SIMD assessment — which are real flaws that would produce insecure or broken deployments. The two niobium-client scenarios exercise the implementation and DSL-versus-scheme routing added in v0.13.0. The traffic-reduction scenario exercises the Stage 11 optimization pass added in v0.15.0.
